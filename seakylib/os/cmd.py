@@ -3,6 +3,7 @@
 # @Author: Seaky
 # @Date:   2019/9/24 10:49
 
+import re
 from subprocess import run, PIPE, STDOUT
 
 
@@ -32,7 +33,7 @@ def execute(cmd, stdout=PIPE, stderr=STDOUT, encoding='utf-8', shell=False, *arg
     return p
 
 
-def make_cmd_ssh(ssh_host, cmd, ssh_port=22, ssh_user=None, ssh_key=None, env=None, **kwargs):
+def make_cmd_ssh(ssh_host, cmd, ssh_port=22, ssh_user=None, ssh_key=None, env=None, escape='`"', **kwargs):
     '''
     :param host:
     :param cmd:
@@ -40,12 +41,13 @@ def make_cmd_ssh(ssh_host, cmd, ssh_port=22, ssh_user=None, ssh_key=None, env=No
     :param ssh_user:
     :param ssh_key:
     :param env:
-    :param args:
+    :param escape:  替换 ` "
     :param kwargs:
     :return:
     '''
-    # escape cmd中的"为\"
-    cmd = cmd.replace('"', '\\"')
+    if isinstance(escape, str):
+        for es in list(escape):
+            cmd = re.sub(r'(?<!\\){}'.format(es), '\\{}'.format(es), cmd)
     cmd1 = "ssh -p {} ".format(ssh_port)
     if ssh_user:
         cmd1 += "-l {} ".format(ssh_user)
@@ -75,3 +77,23 @@ def make_cmd_sql(sql, db_user, db_pass, db_name, db_host='localhost', db_port=33
 
 def make_cmd_ssh_sql(**kwargs):
     return make_cmd_ssh(cmd=make_cmd_sql(**kwargs), **kwargs)
+
+
+def execute_sql_remote(**kwargs):
+    '''
+    通过ssh查询远程数据库
+    :param kwargs:
+    :return:
+    '''
+    p = execute(make_cmd_ssh_sql(**kwargs))
+    if p.returncode == 0:
+        p.result = []
+        if p.stdout:
+            for i, line in enumerate(p.stdout.split('\n')):
+                if i == 0:
+                    keys = line.split('\t')
+                    continue
+                if not line.strip():
+                    continue
+                p.result.append({keys[j]: None if v == 'NULL' else v for j, v in enumerate(line.split('\t'))})
+    return p

@@ -67,7 +67,7 @@ def str2list(s, sep=',', presave_blank=False, wrapper='', filter=None):
 
 
 def list2str(l, sep=',', wrapper='', *args, **kwargs):
-    if isinstance(l, list):
+    if isinstance(l, (list, set)):
         return sep.join(['{0}{1}{0}'.format(wrapper, x) for x in l])
     elif isinstance(l, str):
         l1 = str2list(l, sep=sep, *args, **kwargs)
