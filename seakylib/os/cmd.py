@@ -5,7 +5,7 @@
 
 '''
 execute_sql_remote(sql, db_host='localhost', db_port=3306, db_user, db_pass, db_name,
-    ssh_host, ssh_port=22, ssh_user, ssh_key)
+    ssh_host, ssh_port=22, ssh_user, ssh_pkey/ssh_keyfile)
 '''
 
 import os
@@ -97,19 +97,22 @@ def execute_sql(**kwargs):
     return parse_execute_sql_result(p)
 
 
-def execute_ssh_cmd(cmd, **kwargs):
+def execute_ssh_cmd(cmd, ssh_temp_key_dir=None, **kwargs):
     '''
     执行远程ssh命令
+    :param ssh_temp_key_dir: 临时保存key的目录
     :param kwargs:
-        ssh_pkey, 可以传入key字串
+        ssh_pkey, 可以传入key字串，如www-data调用时受权限限制，需要临时保存key
     :return:
     '''
     temp_keyfile = False
     if kwargs.get('ssh_pkey'):
-        ssh_root = Path(os.environ['HOME']) / '.ssh'
-        if not ssh_root.exists():
-            ssh_root.mkdir()
-        ssh_keyfile = '{}/cmd_temp_key'.format(ssh_root)
+        if not ssh_temp_key_dir:
+            ssh_temp_key_dir = Path(os.environ['HOME']) / '.ssh'
+        ssh_temp_key_dir = Path(ssh_temp_key_dir)
+        if not ssh_temp_key_dir.exists():
+            ssh_temp_key_dir.mkdir()
+        ssh_keyfile = '{}/cmd_temp_key'.format(ssh_temp_key_dir)
         open(ssh_keyfile, 'w').write(kwargs['ssh_pkey'])
         execute('chmod 600 {}'.format(ssh_keyfile))
         kwargs['ssh_keyfile'] = ssh_keyfile
