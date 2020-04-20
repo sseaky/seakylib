@@ -8,7 +8,9 @@ execute_sql_remote(sql, db_host='localhost', db_port=3306, db_user, db_pass, db_
     ssh_host, ssh_port=22, ssh_user, ssh_key)
 '''
 
+import os
 import re
+from pathlib import Path
 from subprocess import run, PIPE, STDOUT
 
 
@@ -38,13 +40,14 @@ def execute(cmd, stdout=PIPE, stderr=STDOUT, encoding='utf-8', shell=False, *arg
     return p
 
 
-def make_cmd_ssh(ssh_host, cmd, ssh_port=22, ssh_user=None, ssh_key=None, env=None, escape='`"', **kwargs):
+def make_ssh_cmd(cmd, ssh_host, ssh_port=22, ssh_user=None, ssh_keyfile=None, env=None, escape='`"', **kwargs):
     '''
-    :param host:
+    :param ssh_host:
     :param cmd:
-    :param port:
+    :param ssh_port:
     :param ssh_user:
-    :param ssh_key:
+    :param ssh_keyfile:
+    :param ssh_pkey:
     :param env:
     :param escape:  替换 ` "
     :param kwargs:
@@ -56,8 +59,8 @@ def make_cmd_ssh(ssh_host, cmd, ssh_port=22, ssh_user=None, ssh_key=None, env=No
     cmd1 = "ssh -p {} ".format(ssh_port)
     if ssh_user:
         cmd1 += "-l {} ".format(ssh_user)
-    if ssh_key:
-        cmd1 += "-i '{}' ".format(ssh_key)
+    if ssh_keyfile:
+        cmd1 += "-i '{}' ".format(ssh_keyfile)
     cmd1 += ssh_host
     if isinstance(env, dict):
         cmd = ''.join("export {}='{}' && ".format(k, v) for k, v in env.items()) + cmd
@@ -81,22 +84,51 @@ def make_cmd_sql(sql, db_user, db_pass, db_name, db_host='localhost', db_port=33
 
 
 def make_cmd_ssh_sql(**kwargs):
-    return make_cmd_ssh(cmd=make_cmd_sql(**kwargs), **kwargs)
+    return make_ssh_cmd(cmd=make_cmd_sql(**kwargs), **kwargs)
 
 
-def excute_sql(**kwargs):
-    '''通过cli查询本地数据库'''
+def execute_sql(**kwargs):
+    '''
+    执行命令行sql
+    :param kwargs:
+    :return:
+    '''
     p = execute(make_cmd_sql(**kwargs))
     return parse_execute_sql_result(p)
 
 
-def execute_sql_remote(**kwargs):
+def execute_ssh_cmd(cmd, **kwargs):
+    '''
+    执行远程ssh命令
+    :param kwargs:
+        ssh_pkey, 可以传入key字串
+    :return:
+    '''
+    temp_keyfile = False
+    if kwargs.get('ssh_pkey'):
+        ssh_root = Path(os.environ['HOME']) / '.ssh'
+        if not ssh_root.exists():
+            ssh_root.mkdir()
+        ssh_keyfile = '{}/cmd_temp_key'.format(ssh_root)
+        open(ssh_keyfile, 'w').write(kwargs['ssh_pkey'])
+        execute('chmod 600 {}'.format(ssh_keyfile))
+        kwargs['ssh_keyfile'] = ssh_keyfile
+        temp_keyfile = True
+
+    p = execute(make_ssh_cmd(cmd=cmd, **kwargs))
+    if temp_keyfile:
+        os.remove(ssh_keyfile)
+    return p
+
+
+def execute_sql_remote(sql, **kwargs):
     '''
     通过ssh查询远程数据库，提供make_cmd_sql，make_cmd_ssh的参数, sql语句中使用"
     :param kwargs:
+        sql
     :return:
     '''
-    p = execute(make_cmd_ssh_sql(**kwargs))
+    p = execute_ssh_cmd(cmd=make_cmd_sql(sql, **kwargs), **kwargs)
     return parse_execute_sql_result(p)
 
 
