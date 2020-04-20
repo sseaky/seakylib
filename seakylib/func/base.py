@@ -20,6 +20,11 @@ from ..os.oper import dump_data, load_data
 
 
 def current_function(skip=None):
+    '''
+    获取调用函数的名字
+    :param skip:
+    :return:
+    '''
     skip = arg2list(skip)
     for x in traceback.extract_stack()[::-1]:
         if not re.search('^(\<|func_done|current_function)', x.name) and x.name not in skip:
@@ -28,8 +33,17 @@ def current_function(skip=None):
     # return sys._getframe().f_back.f_code.co_name
 
 
-def func_done(name=None):
-    return 'func {} done.'.format(name if name else current_function())
+def func_done(name=None, cache=None, flag=True):
+    '''
+    :param name:    自定义函数名
+    :param cache:   记录函数是否已被运行
+    :param flag:    运行结果
+    :return:
+    '''
+    name = name or current_function()
+    if isinstance(cache, dict):
+        cache[name] = flag
+    return 'func {} done.'.format(name)
 
 
 def count_time(f):

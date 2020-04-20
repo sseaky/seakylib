@@ -141,7 +141,7 @@ class Snmp(MyClass):
         oids = {self.lookup_num_oid(y): y for y in oids}
         return self._bulkwalk(oids=oids, *args, **kwargs)
 
-    def _bulkwalk(self, oids, keys=None, index=None, num_base_nodes=0, ret_raw=False, orderby=None,
+    def _bulkwalk(self, oids, keys=None, index=None, num_base_nodes=0, ret_raw=False, orderby=None, is_hex=False,
                   to_str=True, proc=None, bulk_size=None, timeout=None):
         '''
         :param oids: dict
@@ -183,7 +183,8 @@ class Snmp(MyClass):
                 keys['0'] = 'id'
             _lst = []
             for i, x in enumerate(lst):
-                d = {keys.get(k, k): bytes_decode(x[k], to_type='str' if to_str else None) for k, v in x.items()}
+                d = {keys.get(k, k): bytes_decode(x[k], to_type='str' if to_str else None, is_hex=is_hex) for k, v in
+                     x.items()}
                 _lst.append(d)
             if not index or index not in keys:
                 return _lst

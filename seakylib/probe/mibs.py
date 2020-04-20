@@ -23,6 +23,7 @@ MIB = {
             'lldpRemPortDesc': '1.0.8802.1.1.2.1.4.1.1.8',
             'lldpRemSysName': '1.0.8802.1.1.2.1.4.1.1.9',
             'lldpRemSysDesc': '1.0.8802.1.1.2.1.4.1.1.10',
+            'dot1qVlanStaticEgressPorts': '1.3.6.1.2.1.17.7.1.4.3.1.2',  # comware, vrp
         },
     'h3c': {
         'dot3adAggPortSelectedAggID': '1.2.840.10006.300.43.1.2.1.1.12',
@@ -39,6 +40,8 @@ MIB = {
         'Vlan2Addr': '1.3.6.1.4.1.25506.8.35.2.1.2.1.3.2',
         'Vlan2Mask': '1.3.6.1.4.1.25506.8.35.2.1.2.1.4.2',
         'hh3cLswSysIpAddr': '1.3.6.1.4.1.25506.8.35.18.1.1',
+        'hh3cdot1qVlanPorts': '1.3.6.1.4.1.25506.8.35.2.1.1.1.3',
+        'hh3cifVLANType': '1.3.6.1.4.1.25506.8.35.1.1.1.5',
 
         # 'hh3cLswSysVersion': '1.3.6.1.4.1.25506.8.35.18.1.4',
         # 'hh3cSysPackageVersion': '1.3.6.1.4.1.25506.2.3.1.7.2.1.10',

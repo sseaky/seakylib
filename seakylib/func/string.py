@@ -84,21 +84,24 @@ def arg2list(obj):
     return obj
 
 
-def bytes_decode(v, enconding='utf-8', errors='strict', **kwargs):
+def bytes_decode(v, is_hex=False, enconding='utf-8', errors='strict', **kwargs):
     '''
     convert v to spec type, default str, puresnmp use it.
     :param v:
-    :param to_type:
+    :param is_hex:  显示指定hex
     :param enconding:
     :param errors:
     :return:
     '''
     if isinstance(v, bytes):
-        try:
-            v = bytes.decode(v, encoding=enconding, errors=errors)
-        except Exception as e:
-            # if v is hex bytes
+        if is_hex:
             v = v.hex()
+        else:
+            try:
+                v = bytes.decode(v, encoding=enconding, errors=errors)
+            except Exception as e:
+                # if v is hex bytes
+                v = v.hex()
     return change_type(v, **kwargs)
 
 
@@ -106,7 +109,7 @@ def change_type(v, to_type=None, default=None, strip=True):
     '''
     转换类型，如果有指定，但转换不了，返回default或原值，如果无指定，刚自动匹配
     :param v:
-    :param _type:
+    :param to_type:
     :param default: 默认返回，None则返回原值
     :param strip:
     :return:

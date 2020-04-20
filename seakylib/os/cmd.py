@@ -3,6 +3,11 @@
 # @Author: Seaky
 # @Date:   2019/9/24 10:49
 
+'''
+execute_sql_remote(sql, db_host='localhost', db_port=3306, db_user, db_pass, db_name,
+    ssh_host, ssh_port=22, ssh_user, ssh_key)
+'''
+
 import re
 from subprocess import run, PIPE, STDOUT
 
@@ -79,21 +84,42 @@ def make_cmd_ssh_sql(**kwargs):
     return make_cmd_ssh(cmd=make_cmd_sql(**kwargs), **kwargs)
 
 
+def excute_sql(**kwargs):
+    '''通过cli查询本地数据库'''
+    p = execute(make_cmd_sql(**kwargs))
+    return parse_execute_sql_result(p)
+
+
 def execute_sql_remote(**kwargs):
     '''
-    通过ssh查询远程数据库
+    通过ssh查询远程数据库，提供make_cmd_sql，make_cmd_ssh的参数, sql语句中使用"
     :param kwargs:
     :return:
     '''
     p = execute(make_cmd_ssh_sql(**kwargs))
+    return parse_execute_sql_result(p)
+
+
+def parse_execute_sql_result(p):
     if p.returncode == 0:
         p.result = []
         if p.stdout:
-            for i, line in enumerate(p.stdout.split('\n')):
-                if i == 0:
-                    keys = line.split('\t')
-                    continue
-                if not line.strip():
-                    continue
-                p.result.append({keys[j]: None if v == 'NULL' else v for j, v in enumerate(line.split('\t'))})
+            p.result.extend(parse_sql_result(p.stdout))
     return p
+
+
+def parse_sql_result(s):
+    '''
+    解析命令行的sql结果，也可以从文件读取
+    :param s:
+    :return:
+    '''
+    l = []
+    for i, line in enumerate(s.split('\n')):
+        if i == 0:
+            keys = line.split('\t')
+            continue
+        if not line.strip():
+            continue
+        l.append({keys[j]: None if v == 'NULL' else v for j, v in enumerate(line.split('\t'))})
+    return l

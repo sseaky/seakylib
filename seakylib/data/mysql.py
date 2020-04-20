@@ -683,7 +683,7 @@ class MyModel:
                     kw = k
                     break
             if not kw:
-                return False, 'no unique key provided.'
+                return False, 'no unique key provided when query new items.'
             quote = False if isinstance(datas[0][kw], (int, float)) else True
             is_ok, resp = self.query(
                 condition='{0} in ({1})'.format(kw,
