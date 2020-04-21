@@ -5,5 +5,5 @@
 
 __title__ = 'seakylib'
 __author__ = 'Seaky'
-__version__ = '1.0.5.4'
+__version__ = '1.0.5.5'
 __copyright__ = 'Copyright (c) 2020 Seaky'
