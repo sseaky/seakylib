@@ -19,6 +19,45 @@ from ..os.info import get_pwd
 from ..os.oper import dump_data, load_data
 
 
+def inspect_object(obj):
+    '''
+    检查object
+    :param obj:
+    :return:
+    '''
+    print('inspect {}'.format(obj))
+    for x in dir(obj):
+        sub = getattr(obj, x)
+        if hasattr(sub, '__call__'):
+            tp = 'func'
+            if x.startswith('__'):
+                try:
+                    r = sub()
+                except Exception as e:
+                    r = e
+            else:
+                r = ''
+            l = [tp, x, r]
+        else:
+            tp = 'attr'
+            l = [tp, x, sub]
+        print('{}  {:<10}  {}'.format(*l))
+
+
+def get_obj_name(obj):
+    '''
+    返回 object 的名字
+    :param obj:
+    :return:
+    '''
+    if not hasattr(obj, '__name__'):
+        return str(obj)
+    name = obj.__name__
+    if hasattr(obj, '__self__'):
+        name = '{}.{}'.format(obj.__self__.__module__, name)
+    return name
+
+
 def current_function(skip=None):
     '''
     获取调用函数的名字
@@ -40,10 +79,14 @@ def func_done(name=None, cache=None, flag=True):
     :param flag:    运行结果
     :return:
     '''
+    already = False
     name = name or current_function()
     if isinstance(cache, dict):
-        cache[name] = flag
-    return 'func {} done.'.format(name)
+        if cache.get(name) == flag:
+            already = True
+        else:
+            cache[name] = flag
+    return 'func {} is {}done.'.format(name, 'already ' if already else '')
 
 
 def count_time(f):
@@ -175,6 +218,8 @@ def run_func(obj):
                 return func(*args)
             elif isinstance(args, dict):
                 return func(**args)
+            else:
+                return func(args)
         else:
             func, *args = obj
             return func(*args)
@@ -191,8 +236,13 @@ def run_functions(*funcs, message=None, order='and', watchdog=None, **kwargs):
     如果是or，任意func返回True即返回True，否则返回False
     watchdog: 额外判断函数
     '''
-
+    fs_name = []
     for func in funcs:
+        if func is None:
+            continue
+        real_func = func[0] if isinstance(func, tuple) else func
+        func_name = get_obj_name(real_func)
+        fs_name.append(func_name)
         is_ok, _message = run_func(func)
         if watchdog:
             x, y = run_func(watchdog)
@@ -206,9 +256,9 @@ def run_functions(*funcs, message=None, order='and', watchdog=None, **kwargs):
                 return is_ok, _message
     # 如果是and，跳出循环表明都执行成功；如果是or，跳出循环表明都执行失败
     if order == 'and':
-        return True, message if message else 'run_fucs successfully.'
+        return True, message if message else 'run funcs {} successfully.'.format(fs_name)
     elif order == 'or':
-        return False, message if message else 'run_fucs fail.'
+        return False, message if message else 'run funcs {} fail.'.format(fs_name)
 
 
 class MyClass:

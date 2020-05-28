@@ -15,6 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from ..func.base import MyClass
+from ..func.mrun import MultiRun
 
 warnings.filterwarnings("ignore")
 
@@ -91,6 +92,25 @@ class Http(MyClass):
         self.fetch_after(_raw, _content, bs)
         ret = bs if ret_bs else _content
         return {'result': ret, 'url': url, 'kwargs': d} if ret_dic else ret
+
+    def multi_job(self, *args, **kwargs):
+        '''
+        多进程的job
+        :return:
+        '''
+        return True, self.fetch(*args, **kwargs)
+
+    def multi_fetch(self, kws, process_num=5, process_time=None, inline=False):
+        '''
+        :param graphs: [{'local_graph_id': xxx}]
+        :param ignore_error: 错误继续
+        :return:
+        '''
+        mr = MultiRun(func=self.multi_job, func_kws=kws, log=self.log, add_log_to_common_kw=False,
+                      process_num=process_num,
+                      verbose=self.verbose, debug=self.debug)
+        is_ok, results = mr.run(save=False, process_timeout=process_time, inline=inline)
+        return is_ok, results
 
     def fetch_after(self, *args):
         '''

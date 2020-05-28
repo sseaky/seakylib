@@ -10,6 +10,7 @@ import traceback
 from collections import OrderedDict
 from functools import wraps
 
+import pandas
 import pandas as pd
 from sqlalchemy import Float
 from sqlalchemy import INTEGER as INTEGER1, FLOAT, create_engine, UniqueConstraint
@@ -19,7 +20,7 @@ from sqlalchemy.dialects.mysql import BIGINT, INTEGER, SMALLINT, TINYINT
 from sqlalchemy.orm import sessionmaker
 
 from ..data.pd import set_none
-from ..func.string import replace
+from ..func.string import change_type, add_quote
 from ..func.time import datetime_to_string
 
 
@@ -76,28 +77,6 @@ def obj2dict(obj, key=None, cols=None):
         if not cols:
             cols = [co.name for co in obj.__table__.columns]
         return {co: getattr(obj, co) for co in cols}
-
-
-def add_quote(v, to_str=True, split=False, strip=True, quote='"'):
-    '''
-    添加 " " 到sql语句中
-    :param v: int/float/list/str
-    :param to_str: 数字也转成字符串，在select中可以，但在call procedure不能
-    :param split: 如果split, 则分割v, 返回合并, xxx,yyy -> "xxx","yyy"
-    :param strip: 去除空值
-    :return:
-    '''
-    if v is None:
-        return 'Null'
-    elif isinstance(v, (list, tuple)):
-        return [add_quote(x, to_str=to_str, split=False, strip=strip, quote=quote) for x in v]
-    elif isinstance(v, (int, float)):
-        return '{0}{1}{0}'.format(quote, v) if to_str else str(v)
-    elif split:
-        return ','.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
-                                  to_str=to_str, split=False, strip=strip, quote=quote))
-    else:
-        return '{0}{1}{0}'.format(quote, replace(v, pats=['(^"|"$)', "(^'|'$)"]))
 
 
 def engine(conn_str=None, echo=False, **kwargs):
@@ -306,7 +285,18 @@ class MyModel:
     #     # return self.update_df(data_new, *args, **kwargs)
     #     return self.update_batch(data_new, *args, **kwargs)
 
-    def _update_compare_dict(self, data_new, data_old, key, cols=None, func_skip=None, last=True):
+    def _update_compare_dict(self, data_new, data_old, key, cols=None, func_skip=None, last=True, fuzz_digit=True):
+        '''
+
+        :param data_new:
+        :param data_old:
+        :param key:
+        :param cols:
+        :param func_skip: 忽略记录函数
+        :param last:    如果表中有last_字段，update时同时更新
+        :param fuzz_digit: 是否模糊字符串和数字，mysql select时，可混用
+        :return:
+        '''
         if isinstance(data_new, pd.DataFrame):
             if data_new.index.name != key:
                 data_new.index = data_new[key]
@@ -338,7 +328,15 @@ class MyModel:
             for k1, v1 in v.items():
                 if cols and k1 not in cols:
                     continue
-                if k1 in data_old[k] and k1 in self.cols_name and v1 != data_old[k][k1]:
+                if k1 in data_old[k] and k1 in self.cols_name:
+                    if v1 and data_old[k][k1] is None:  # 原数据为None，需要替换
+                        pass
+                    elif v1 == data_old[k][k1]: # 数据不变
+                        continue
+                    elif type(v1) == type(data_old[k][k1]) or not fuzz_digit:  # 模糊类型
+                        pass
+                    elif change_type(v1, to_type=type(data_old[k][k1])) == data_old[k][k1]:
+                        continue
                     if k1 not in changed_cols:
                         changed_cols.append(k1)
                     if k1.startswith('last_'):
@@ -419,7 +417,7 @@ class MyModel:
                with_detail=False, with_sqls=False,
                timed=True, last=True,
                use_df=False, df_to_str=False,
-               block=2000, dryrun=False, ret_str=False, **kwargs):
+               block=2000, dryrun=False, ret_str=False, fuzz_digit=True, **kwargs):
         '''
         :param data_new:    dict or list
         :param data_old:    dict or condition
@@ -444,6 +442,7 @@ class MyModel:
         :param block: 限制每次更新的项
         :param dryrun: 不实际执行
         :param ret_str: 返回结果string, 而不是OrderDict, 直接打印dict会乱序
+        :param fuzz_digit: 比较时自动匹配str和int，mysql中使用int和str能能用
         :return:
         '''
         if not key:
@@ -463,6 +462,8 @@ class MyModel:
             param_update['key'] = key
         if not param_delete:
             param_delete = {}
+        if not use_df and isinstance(data_new, pandas.core.frame.DataFrame):
+            data_new = data_new.to_dict(orient='records')
         if isinstance(data_new, list):
             data_new = {x[key]: x for x in data_new}
         if isinstance(data_old, list):
@@ -470,7 +471,7 @@ class MyModel:
         if use_df:
             d = self._update_compare_df(data_new, data_old, key, cols, func_skip, df_to_str)
         else:
-            d = self._update_compare_dict(data_new, data_old, key, cols, func_skip, last=last)
+            d = self._update_compare_dict(data_new, data_old, key, cols, func_skip, last=last, fuzz_digit=fuzz_digit)
         items_new, items_need_update, items_miss = d['items_new'], d['items_need_update'], d['items_miss']
         changed_cols = d['changed_cols']
         now = datetime_to_string()
@@ -504,8 +505,8 @@ class MyModel:
             elif action_delete:
                 # self.session.query(self.model.id.in_((n,n,n))).all().delete()
                 is_ok, result = self.delete(data=items_miss, batch=True, key=key,
-                                         force_condition=force_condition,
-                                         **param_delete)
+                                            force_condition=force_condition,
+                                            **param_delete)
                 assert is_ok, result
                 sqls.append(result['sql'])
         if timed and 'time_check' in self.cols_name:
@@ -523,7 +524,7 @@ class MyModel:
              ('changed', len(items_need_update)),
              ('only_changed_last', d['only_change_last']),
              ('dryrun', dryrun),
-             ('updated', len(items_need_update)) if not dryrun else 0,
+             ('updated', len(items_need_update) if not dryrun else 0),
              ('action_add', action_add),
              ('new', len(items_new)),
              ('added', len(items_new) if action_add and not dryrun else 0),
@@ -890,7 +891,8 @@ class MyModel:
                 return True, d
 
     @catch_sql_exception
-    def query(self, sql=None, table=None, condition='', cols=None, limit=None, orderby=None, use_pd=True, **kwargs):
+    def query(self, sql=None, table=None, condition='', cols=None, limit=None, orderby=None, use_pd=True,
+              with_sql=False, **kwargs):
         '''
         使用_query2时, 如果sql中有%, 需要使用%%
         query2('table', '', ['a', ('b', 'b1')]) -> select a, b as b1 from table
@@ -918,7 +920,11 @@ class MyModel:
             sql = 'select {0} from {1} {2} {3} {4}'.format(cols1, table, condition,
                                                            'order by {}'.format(orderby) if orderby else '',
                                                            'limit {}'.format(limit) if limit else '')
-        return self._query2(sql, **kwargs) if use_pd else self._query1(sql, **kwargs)
+        is_ok, result = self._query2(sql, **kwargs) if use_pd else self._query1(sql, **kwargs)
+        if with_sql:
+            return is_ok, {'data': result, 'sql': sql}
+        else:
+            return is_ok, result
 
     @catch_sql_exception
     def call_procedure(self, name, *args):
@@ -928,7 +934,11 @@ class MyModel:
         :return:
         '''
         sql = 'call {}({})'.format(name, ','.join(add_quote(args, to_str=False)))
-        res = self.session.execute(sql).fetchall()
+        res = self.session.execute(sql)
+        try:
+            res = res.fetchall()
+        except:
+            res = 'no return'
         self.commit()
         return True, res
 

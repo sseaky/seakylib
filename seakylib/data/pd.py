@@ -32,7 +32,7 @@ def select_row(df, func):
 
 
 def to_df(data, cols=None, black=None, sort_by=None, sort_type=None, sort_desc=False, index_disp=False,
-          index_name=None, use_none=True, none_str=None, **kwargs):
+          index_name=None, use_none=True, none_str=None, dt_cols=None, **kwargs):
     '''
     :param data    dict/list/df
     :param cols:   []
@@ -44,6 +44,7 @@ def to_df(data, cols=None, black=None, sort_by=None, sort_type=None, sort_desc=F
     :param index_name:    index名字，index_name-> df.index.name-> 'index'
     :param use_none:   替换nan为None
     :param none_str: 替换None为字符
+    :param dt_cols: 转成datetime格式
     :param kwargs:
         orient: columns/index   dict的key
         columns: 如果orient为index，可以分配columns
@@ -58,6 +59,9 @@ def to_df(data, cols=None, black=None, sort_by=None, sort_type=None, sort_desc=F
     if not isinstance(cols, list):
         cols = df.columns.tolist()
     df = df[[x for x in cols if x in df.columns.tolist() and x not in black]]
+    if isinstance(dt_cols, list):
+        for col in dt_cols:
+            df[col] = pd.to_datetime(df[col])
     if sort_by:
         origin_columns = df.columns.tolist()
         if isinstance(sort_by, (str, int)):

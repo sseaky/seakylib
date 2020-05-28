@@ -65,7 +65,8 @@ def make_ssh_cmd(cmd, ssh_host, ssh_port=22, ssh_user=None, ssh_keyfile=None, en
     if ssh_user:
         cmd1 += "-l {} ".format(ssh_user)
     if ssh_keyfile:
-        cmd1 += "-i '{}' ".format(ssh_keyfile)
+        # -i 加引号在win10下会找不到keyfile
+        cmd1 += "-i {} ".format(ssh_keyfile)
     if isinstance(ssh_options, dict):
         for k, v in ssh_options.items():
             cmd1 += '-o {}={} '.format(k, v)
@@ -95,13 +96,18 @@ def make_cmd_ssh_sql(**kwargs):
     return make_ssh_cmd(cmd=make_cmd_sql(**kwargs), **kwargs)
 
 
-def execute_sql(**kwargs):
+def execute_sql(sql, print_error=False, **kwargs):
     '''
     执行命令行sql
+    :param sql:
+    :param print_error:
     :param kwargs:
     :return:
     '''
-    p = execute(make_cmd_sql(**kwargs))
+    p = execute(make_cmd_sql(sql, **kwargs))
+    if p.stdout.startswith('ERROR '):
+        if print_error:
+            print(p.stdout)
     return parse_execute_sql_result(p)
 
 
@@ -132,15 +138,19 @@ def execute_ssh_cmd(cmd, ssh_temp_key_dir=None, **kwargs):
     return p
 
 
-def execute_sql_remote(sql, **kwargs):
+def execute_sql_remote(sql, print_error=False, **kwargs):
     '''
     通过ssh查询远程数据库，提供make_cmd_sql，make_cmd_ssh的参数, sql语句中使用"
+    :param sql:
+    :param print_error:
     :param kwargs:
-        sql
     :return:
     '''
     kwargs['ssh_quite'] = True
     p = execute_ssh_cmd(cmd=make_cmd_sql(sql, **kwargs), **kwargs)
+    if p.stdout.startswith('ERROR '):
+        if print_error:
+            print(p.stdout)
     return parse_execute_sql_result(p)
 
 

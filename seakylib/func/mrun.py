@@ -104,66 +104,73 @@ class MultiRun(MyClass):
         self.show_process_debug('process {} end.'.format(process_i))
 
     @catch_exception()
-    def run(self, load=False, save=True, retry_fail=0, func_retry_spec=None, func_change=None, *args, **kwargs):
+    def run(self, load=False, save=True, retry_fail=0, func_retry_skip=None, func_change=None, load_fail_result=False,
+            *args, **kwargs):
         '''
         :param load:
         :param save:
-        :param retry:   重复失败的结果的次数
-        :param func_retry_spec:   如果func_retry_spec是函数，则要返回True才重试，如果为None重试所有失败
+        :param retry_fail:   重复失败的结果的次数
+        :param func_retry_skip:   如果func_retry_spec是函数，则要返回True才重试，如果为None重试所有失败
         :param func_change:   可在重试时调整某些参数
+        :param load_fail_result:   --load_fail_result
         :param args:
         :param kwargs:
         :return:
         '''
         assert isinstance(retry_fail, int), 'retry_fail must be int.'
-        self.func_kws_now = self.func_kws
         result_path = self.path_temp / '{}_mrun_result.json'.format(get_caller().stem)
         if load and result_path.exists():
             is_ok, self.results = load_data(result_path)
             return is_ok, self.results
-        is_ok, results = self._run(*args, **kwargs)
+        elif load_fail_result and result_path.exists():
+            is_ok, results = load_data(result_path)
+            self.log.info('load results from {} .'.format(result_path))
+            self.func_kws = [x['kw'] for x in results]
+            self.func_kws_now = self.func_kws
+            if retry_fail < 1:
+                retry_fail = 1
+        else:
+            self.func_kws_now = self.func_kws
+            is_ok, results = self._run(*args, **kwargs)
         assert is_ok, results
 
         # 重复运行
         i = 0
         _results = results
-        presave_orders = [i for i, x in enumerate(results)]
+        # presave_orders = [i for i, x in enumerate(_results)]
         # idx_order = {x['idx']: i for i, x in enumerate(results)}
         while i < retry_fail:
             i += 1
             fails = []
-            orders = []
+            # orders = []
             for j, x in enumerate(_results):
-                ori_order = presave_orders[j]
+                # ori_order = presave_orders[j]
                 if x['is_ok']:
                     continue
-                flag = False
-                if not func_retry_spec:
-                    flag = True
-                elif hasattr(func_retry_spec, '__call__') and func_retry_spec(x):
-                    flag = True
-                if not flag:
+                if hasattr(func_retry_skip, '__call__') and func_retry_skip(x):
                     continue
-                kw = self.func_kws[ori_order]
+                # kw = x['kw']
                 if func_change and hasattr(func_change, '__call__'):
-                    kw = func_change(x)
-                fails.append(kw)
-                orders.append(ori_order)
+                    x['kw'] = func_change(x)
+                fails.append(x)
+                # orders.append(ori_order)
             if not fails:
                 break
-            self.func_kws_now = fails
+            self.func_kws_now = [x['kw'] for x in fails[:]]
             self.log.info('retry {} failed tasks in {} times.'.format(len(fails), i))
             is_ok, _results = self._run(*args, **kwargs)
             assert is_ok, _results
+            # 有些miss result的，需要补上order_out
             order_out_last = max([x.get('order_out', 0) for x in results])
             for j, x in enumerate(_results):
-                ori_order = presave_orders[j]
-                d = {'retry': i, 'pre_kw': self.func_kws[ori_order]}
+                # ori_order = presave_orders[j]
+                d = {'retry': i}
                 d.update({k: v for k, v in x.items() if k in ['is_ok', 'result', 'timer', 'kw']})
-                results[ori_order].update(d)
-                if 'order_out' not in results[ori_order]:
-                    results[ori_order]['order_out'] = x['order_out'] + order_out_last
-            presave_orders = orders
+                fails[j].update(d)
+                # results[ori_order].update(d)
+                if 'order_out' not in fails[j] and 'order_out' in x:  # 有可能retry时，又miss了
+                    fails[j]['order_out'] = x['order_out'] + order_out_last
+            # presave_orders = orders
 
         if save:
             dump_data(results, result_path)
@@ -232,9 +239,22 @@ class MultiRun(MyClass):
             for i, d in enumerate(self.q_output):
                 d['order_out'] = i + 1
                 outputs[d['idx']] = d
-        results = [outputs.get(idx, {'is_ok': False, 'miss': True, 'result': 'result is not exist.',
-                                     'order_in': d['order_in'],
-                                     'kw': d['kw']}) for idx, d in idxes.items()]
+        results = []
+        for idx, d in idxes.items():
+            if idx in outputs:
+                results.append(outputs[idx])
+            else:
+                d1 = {'is_ok': False,
+                      'miss': True,
+                      'result': 'result is not exist.',
+                      'order_in': d['order_in'],
+                      'kw': d['kw'],
+                      }
+                results.append(d1)
+
+        # results = [outputs.get(idx, {'is_ok': False, 'miss': True, 'result': 'result is not exist.',
+        #                              'order_in': d['order_in'],
+        #                              'kw': d['kw']}) for idx, d in idxes.items()]
         return True, results
 
     def show_process_debug(self, *obj):
@@ -305,6 +325,7 @@ class MrunArgParse(ArgParseClass):
         self.add('--inline', action='store_true', default=False, help='串行模式', group=group)
         self.add('--show_process', action='store_true', default=False, help='显示进程操作过程', group=group)
         self.add('--retry_fail', type=int, default=0, help='重试失败次数，默认0', group=group)
+        self.add('--load_fail_result', action='store_true', default=False, help='载入原先失败的结果', group=group)
 
     # def add_all(self):
     #     self.add_base(self)

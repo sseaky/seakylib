@@ -118,6 +118,13 @@ def path_copy(src, dst, overwrite=False, violent=False, **kwargs):
 
 
 def load_or_get(filename, func, load=True, **kwargs):
+    '''
+    :param filename: 保存结果的文件
+    :param func:
+    :param load:
+    :param kwargs:
+    :return:
+    '''
     if load:
         try:
             is_ok, data = load_data(filename, **kwargs)

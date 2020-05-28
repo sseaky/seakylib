@@ -249,3 +249,25 @@ def format_output(data, column=None, show_title=True, fmt=None, default='-', sep
         else:
             s.append(str(x))
     return '\n'.join(s)
+
+
+def add_quote(v, to_str=True, split=False, strip=True, quote='"'):
+    '''
+    添加 " " 到sql语句中
+    :param v: int/float/list/str
+    :param to_str: 数字也转成字符串，在select中可以，但在call procedure不能
+    :param split: 如果split, 则分割v, 返回合并, xxx,yyy -> "xxx","yyy"
+    :param strip: 去除空值
+    :return:
+    '''
+    if v is None:
+        return 'Null'
+    elif isinstance(v, (list, tuple)):
+        return [add_quote(x, to_str=to_str, split=False, strip=strip, quote=quote) for x in v]
+    elif isinstance(v, (int, float)):
+        return '{0}{1}{0}'.format(quote, v) if to_str else str(v)
+    elif split:
+        return ','.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
+                                  to_str=to_str, split=False, strip=strip, quote=quote))
+    else:
+        return '{0}{1}{0}'.format(quote, replace(v, pats=['(^"|"$)', "(^'|'$)"]))
