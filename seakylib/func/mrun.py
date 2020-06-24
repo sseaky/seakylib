@@ -48,8 +48,10 @@ class MultiRun(MyClass):
         self.show_process = show_process
         self.show_job_result = show_job_result
         self.mark_start_time = mark_start_time
+        self.stat = {'miss': 0, 'success': 0, 'fail': 0, 'total': len(self.func_kws), 'timer': {}}
         if add_log_to_common_kw and 'log' not in self.func_common_kw_with_obj:
             self.func_common_kw_with_obj['log'] = self.log
+        self.cache['timer_retry'] = []
 
     def before_run(self):
         self.func_kws_now = self.func_kws
@@ -74,6 +76,7 @@ class MultiRun(MyClass):
                 if db_session:
                     self.func_common_kw_with_obj.update({'db_session': db_session})
                 st = {'start_time': start_time} if self.mark_start_time else {}
+                self.timer[v['idx']] = start_time
                 try:
                     is_ok, result = self.func(**v['kw'], **self.func_common_kw_with_obj, **st)
                 except Exception as e:
@@ -104,11 +107,11 @@ class MultiRun(MyClass):
         self.show_process_debug('process {} end.'.format(process_i))
 
     @catch_exception()
-    def run(self, load=False, save=True, retry_fail=0, func_retry_skip=None, func_change=None, load_fail_result=False,
-            *args, **kwargs):
+    def run(self, mrun_load=False, mrun_save=True, retry_fail=0, func_retry_skip=None, func_change=None,
+            load_fail_result=False, *args, **kwargs):
         '''
-        :param load:
-        :param save:
+        :param mrun_load:
+        :param mrun_save:
         :param retry_fail:   重复失败的结果的次数
         :param func_retry_skip:   如果func_retry_spec是函数，则要返回True才重试，如果为None重试所有失败
         :param func_change:   可在重试时调整某些参数
@@ -117,11 +120,11 @@ class MultiRun(MyClass):
         :param kwargs:
         :return:
         '''
+        self.cache['start_time'] = time.time()
         assert isinstance(retry_fail, int), 'retry_fail must be int.'
         result_path = self.path_temp / '{}_mrun_result.json'.format(get_caller().stem)
-        if load and result_path.exists():
-            is_ok, self.results = load_data(result_path)
-            return is_ok, self.results
+        if mrun_load and result_path.exists():
+            is_ok, results = load_data(result_path)
         elif load_fail_result and result_path.exists():
             is_ok, results = load_data(result_path)
             self.log.info('load results from {} .'.format(result_path))
@@ -132,49 +135,56 @@ class MultiRun(MyClass):
         else:
             self.func_kws_now = self.func_kws
             is_ok, results = self._run(*args, **kwargs)
-        assert is_ok, results
+            assert is_ok, results
 
-        # 重复运行
-        i = 0
-        _results = results
-        # presave_orders = [i for i, x in enumerate(_results)]
-        # idx_order = {x['idx']: i for i, x in enumerate(results)}
-        while i < retry_fail:
-            i += 1
-            fails = []
-            # orders = []
-            for j, x in enumerate(_results):
-                # ori_order = presave_orders[j]
-                if x['is_ok']:
-                    continue
-                if hasattr(func_retry_skip, '__call__') and func_retry_skip(x):
-                    continue
-                # kw = x['kw']
-                if func_change and hasattr(func_change, '__call__'):
-                    x['kw'] = func_change(x)
-                fails.append(x)
-                # orders.append(ori_order)
-            if not fails:
-                break
-            self.func_kws_now = [x['kw'] for x in fails[:]]
-            self.log.info('retry {} failed tasks in {} times.'.format(len(fails), i))
-            is_ok, _results = self._run(*args, **kwargs)
-            assert is_ok, _results
-            # 有些miss result的，需要补上order_out
-            order_out_last = max([x.get('order_out', 0) for x in results])
-            for j, x in enumerate(_results):
-                # ori_order = presave_orders[j]
-                d = {'retry': i}
-                d.update({k: v for k, v in x.items() if k in ['is_ok', 'result', 'timer', 'kw']})
-                fails[j].update(d)
-                # results[ori_order].update(d)
-                if 'order_out' not in fails[j] and 'order_out' in x:  # 有可能retry时，又miss了
-                    fails[j]['order_out'] = x['order_out'] + order_out_last
-            # presave_orders = orders
-
-        if save:
-            dump_data(results, result_path)
+            # 重复运行
+            i = 0
+            _results = results
+            # presave_orders = [i for i, x in enumerate(_results)]
+            # idx_order = {x['idx']: i for i, x in enumerate(results)}
+            while i < retry_fail:
+                i += 1
+                fails = []
+                # orders = []
+                for j, x in enumerate(_results):
+                    # ori_order = presave_orders[j]
+                    if x['is_ok']:
+                        continue
+                    if hasattr(func_retry_skip, '__call__') and func_retry_skip(x):
+                        continue
+                    # kw = x['kw']
+                    if func_change and hasattr(func_change, '__call__'):
+                        x['kw'] = func_change(x)
+                    fails.append(x)
+                    # orders.append(ori_order)
+                if not fails:
+                    self.log.info('There is no failed result need to be retried.\n'.format(len(fails), i))
+                    break
+                self.func_kws_now = [x['kw'] for x in fails[:]]
+                self.log.info('Retry {} failed tasks in {} times !!!\n'.format(len(fails), i))
+                try_start_time = time.time()
+                is_ok, _results = self._run(*args, **kwargs)
+                assert is_ok, _results
+                # 有些miss result的，需要补上order_out
+                order_out_last = max([x.get('order_out', 0) for x in results])
+                for j, x in enumerate(_results):
+                    # ori_order = presave_orders[j]
+                    d = {'retry': i}
+                    d.update({k: v for k, v in x.items() if k in ['is_ok', 'result', 'timer', 'kw']})
+                    fails[j].update(d)
+                    # results[ori_order].update(d)
+                    if 'order_out' not in fails[j] and 'order_out' in x:  # 有可能retry时，又miss了
+                        fails[j]['order_out'] = x['order_out'] + order_out_last
+                # presave_orders = orders
+                retry_time = round(time.time() - try_start_time, 2)
+                self.cache['timer_retry'].append(retry_time)
+            if mrun_save:
+                dump_data(results, result_path)
         self.results = results
+        self.cache['timer_mrun'] = round(time.time() - self.cache['start_time'], 2)
+        self.show_miss()
+        self.stat_results(results)
+        self.show_results()
         return is_ok, results
 
     def _run(self, inline=False, process_timeout=None):
@@ -196,9 +206,11 @@ class MultiRun(MyClass):
             m = Manager()
             self.q_input = m.Queue()
             self.q_output = m.Queue()
+            self.timer = m.dict()
         else:
             self.q_input = []
             self.q_output = []
+            self.timer = {}
         assert isinstance(self.func_kws_now, list), 'func_kws is not list.'
         idxes = OrderedDict()
         for i, kw in enumerate(self.func_kws_now, 1):
@@ -240,6 +252,7 @@ class MultiRun(MyClass):
                 d['order_out'] = i + 1
                 outputs[d['idx']] = d
         results = []
+        now = time.time()
         for idx, d in idxes.items():
             if idx in outputs:
                 results.append(outputs[idx])
@@ -249,16 +262,75 @@ class MultiRun(MyClass):
                       'result': 'result is not exist.',
                       'order_in': d['order_in'],
                       'kw': d['kw'],
+                      'timer': round((now - self.timer[idx]) if self.timer.get(idx) else 9999, 2),
                       }
                 results.append(d1)
 
         # results = [outputs.get(idx, {'is_ok': False, 'miss': True, 'result': 'result is not exist.',
-        #                              'order_in': d['order_in'],
+        #                              'order_in': d['order_in'],t
         #                              'kw': d['kw']}) for idx, d in idxes.items()]
         return True, results
 
     def show_process_debug(self, *obj):
         self.show_by_flag(self.show_process, *obj)
+
+    def show_miss(self):
+        for i, x in enumerate(self.results):
+            if x.get('miss'):
+                self.log_error('miss result. {}'.format(x['kw']))
+
+    def stat_results(self, results):
+        for x in results:
+            if x.get('miss'):
+                self.stat['miss'] += 1
+                continue
+            if x['is_ok']:
+                self.stat['success'] += 1
+            else:
+                self.stat['fail'] += 1
+        l = [{'id': i, 'timer': x['timer'], 'miss': x.get('miss'), 'is_ok': x['is_ok']} for i, x in enumerate(results)]
+        l.sort(key=lambda v: v['timer'], reverse=True)
+
+        self.stat['timer'].update({'top': [x['id'] for x in l],
+                                   'top_success': [x['id'] for x in l if x['is_ok']],
+                                   'top_fail': [x['id'] for x in l if not x.get('miss') and not x['is_ok']],
+                                   'top_miss': [x['id'] for x in l if x.get('miss')]})
+
+    def stat_results1(self, results):
+        timer_max = None
+        timer_min = None
+        timer_max_miss = None
+        timer_max_fail = None
+        for x in results:
+            if x.get('miss'):
+                self.stat['miss'] += 1
+                if not timer_max_miss or x['timer'] > timer_max_miss['timer']:
+                    timer_max_miss = x
+                continue
+            if x['is_ok']:
+                self.stat['success'] += 1
+                if not timer_max or x['timer'] > timer_max['timer']:
+                    timer_max = x
+                if not timer_min or x['timer'] < timer_min['timer']:
+                    timer_min = x
+            else:
+                self.stat['fail'] += 1
+                if not timer_max_fail or x['timer'] > timer_max_fail['timer']:
+                    timer_max_fail = x
+        self.stat['timer'].update({'timer_max': timer_max, 'timer_min': timer_min, 'timer_max_miss': timer_max_miss,
+                                   'timer_max_fail': timer_max_fail})
+
+    def show_results(self):
+        msg = 'Total: {total}, Success: {success}, Fail: {fail}, Miss: {miss}. '.format(**self.stat)
+        msg += 'Duration: {timer_mrun}s'.format(**self.cache)
+        if self.cache['timer_retry']:
+            msg += ', including '
+            l = []
+            for i, x in enumerate(self.cache['timer_retry']):
+                l.append('retry{}: {}s'.format(i + 1, x))
+            msg += ', '.join(l)
+        msg += '.'
+        self.log.info(msg)
 
     def update_results(self, model, key, datas=None, sql=None, last_cols=None, timed=True, ret_str=True):
         '''
@@ -317,15 +389,17 @@ class MrunArgParse(ArgParseClass):
         self.process_num = process_num
         self.process_timeout = process_timeout
 
-    def add_multi(self, group='Multi Process'):
-        self.add('--process_num', type=int, default=self.process_num, help='进程数量，{}'.format(self.process_num),
+    def add_multi(self, group='Multi Process', process_num=None, process_timeout=None):
+        self.add('--process_num', type=int, default=process_num or self.process_num,
+                 help='进程数量，{}'.format(process_num or self.process_num),
                  group=group)
-        self.add('--process_timeout', type=int, default=self.process_timeout,
-                 help='进程超时时间, default {}s'.format(self.process_timeout), group=group)
+        self.add('--process_timeout', type=int, default=process_timeout or self.process_timeout,
+                 help='进程超时时间, default {}s'.format(process_timeout or self.process_timeout), group=group)
         self.add('--inline', action='store_true', default=False, help='串行模式', group=group)
         self.add('--show_process', action='store_true', default=False, help='显示进程操作过程', group=group)
         self.add('--retry_fail', type=int, default=0, help='重试失败次数，默认0', group=group)
         self.add('--load_fail_result', action='store_true', default=False, help='载入原先失败的结果', group=group)
+        self.add('--mrun_load', action='store_true', default=False, help='载入原先的结果', group=group)
 
     # def add_all(self):
     #     self.add_base(self)

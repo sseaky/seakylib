@@ -54,7 +54,10 @@ def get_obj_name(obj):
         return str(obj)
     name = obj.__name__
     if hasattr(obj, '__self__'):
-        name = '{}.{}'.format(obj.__self__.__module__, name)
+        if hasattr(obj.__self__, '__class__'):
+            name = '{}.{}'.format(obj.__self__.__class__.__name__, name)
+        else:
+            name = '{}.{}'.format(obj.__self__.__module__, name)
     return name
 
 
@@ -287,8 +290,9 @@ class MyClass:
         self.debug = kwargs.get('debug')
         # self.traceback = kwargs.get('traceback')
         self.db_session = kwargs.get('db_session')
-        self.debug_info = {'error': [], 'timer': OrderedDict(), 'exception': []}
+        self.debug_info = {'error': [], 'timer': OrderedDict(), 'exception': [], 'warn': []}
         self.cache = {'message': ''}
+        self.control = {}
         if self.debug:
             log_params.update({'level': 'DEBUG'})
         if self.quite:
@@ -296,6 +300,9 @@ class MyClass:
         # self.log = kwargs.get('log', make_logger(self.__class__.__name__, **log_params))
         # 两个类建立默认log时，前者会没有输出？
         self.log = kwargs['log'] if 'log' in kwargs else make_logger(self.__class__.__name__, **log_params)
+
+    def default(self, k):
+        return self.control.get(k)
 
     def show_verbose(self, *obj):
         self.show_by_flag(self.verbose, *obj)
@@ -309,11 +316,23 @@ class MyClass:
             for o in obj:
                 pprint(o) if isinstance(o, (list, dict)) else print(o)
 
-    def log_error(self, s):
+    def log_error(self, s, skip=None):
         '''在这里记录手工错误'''
-        d = {'function': current_function(skip='log_error'), 'message': s}
+        if not skip:
+            skip = []
+        skip.append('log_error')
+        d = {'function': current_function(skip=skip), 'message': s}
         self.debug_info['error'].append(d)
         self.log.error('function: {function}, error: {message}'.format(**d))
+
+    def log_warn(self, s, skip=None):
+        '''在这里记录手工警告'''
+        if not skip:
+            skip = []
+        skip.append('log_warn')
+        d = {'function': current_function(skip=skip), 'message': s}
+        self.debug_info['warn'].append(d)
+        self.log.warn('function: {function}, warn: {message}'.format(**d))
 
 
 # def a(func):

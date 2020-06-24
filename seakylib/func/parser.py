@@ -52,6 +52,12 @@ class ArgParseClass:
         self.add('--sms', action='store_true', help='sms', group=group)
 
     def add(self, *args, **kwargs):
+        '''
+        :param group:
+        :param args:
+        :param kwargs:
+            action='store_true', help='显示详细信息', type=int, default=process_timeout, group
+        '''
         opt = args[0]
         # 隐藏参数
         opt_str = re.sub('^-+', '', opt)

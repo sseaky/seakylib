@@ -15,7 +15,7 @@ from ..os.info import get_pwd, get_caller
 
 def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True, write=True,
                 focus_error=True, multi_process=True,
-                level='INFO', **kwargs):
+                level='INFO', log=None, **kwargs):
     '''
     :param name: logger name
     :param stem: file stem, default filename without type
@@ -30,6 +30,8 @@ def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True
         {'handlers': {...}}
     :return:
     '''
+    if log:
+        return log
     work_dir = work_dir or get_pwd()
     caller = get_caller()
     dpath = Path(work_dir) / log_dir
@@ -92,3 +94,28 @@ def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True
     logging.config.dictConfig(d)
     logger = logging.getLogger(name)
     return logger
+
+
+class SimpleLog:
+    def __init__(self, log=None, use_print=False, *args, **kwargs):
+        self.use_print = use_print
+        if not use_print:
+            self.log = log or make_logger(log=log, *args, **kwargs)
+
+    def info(self, *args, **kwargs):
+        if self.use_print:
+            print('INFO: {}'.format(*args))
+        else:
+            self.log.info(*args, **kwargs)
+
+    def error(self, *args, **kwargs):
+        if self.use_print:
+            print('ERROR: {}'.format(*args))
+        else:
+            self.log.error(*args, **kwargs)
+
+    def warn(self, *args, **kwargs):
+        if self.use_print:
+            print('WARN: {}'.format(*args))
+        else:
+            self.log.warning(*args, **kwargs)

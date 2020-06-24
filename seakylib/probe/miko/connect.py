@@ -171,7 +171,16 @@ class BaseDevice(MyClass):
         return wrapper
 
     @catch_exception()
-    def send_command(self, commands, show_cmd=False, one_line_cmd=False, **kwargs):
+    def send_command(self, commands, show_cmd=False, one_line_cmd=False, timeout_offset=None, **kwargs):
+        '''
+        :param commands:
+        :param show_cmd:
+        :param one_line_cmd:
+        :param timeout_offset: 临时补偿超时时间，依赖于session.timeout
+        :param kwargs:
+        :return:
+        '''
+
         @self.check_cli
         def wrap(commands):
             if isinstance(commands, str):
@@ -184,13 +193,20 @@ class BaseDevice(MyClass):
                     continue
                 if show_cmd:
                     output.append('>>>>> {} <<<<<\n'.format(cmd))
+                flag_change_timeout = False
+                if isinstance(timeout_offset, int):
+                    _to, self.session.timeout = self.session.timeout, self.session.timeout + timeout_offset
+                    flag_change_timeout = True
                 output.append('{}'.format(self.session.send_command(cmd, **kwargs)))
+                if flag_change_timeout:
+                    self.session.timeout = _to
             return True, '\n'.join(output)
 
         return wrap(commands)
 
     @catch_exception()
-    def display(self, commands, func=None, func_kw=None, tidy=True, show_cmd=True, one_line_cmd=False, **kwargs):
+    def display(self, commands, func=None, func_kw=None, tidy=True, show_cmd=True, one_line_cmd=False,
+                timeout_offset=None, **kwargs):
         '''
 
         :param commands:
@@ -199,9 +215,12 @@ class BaseDevice(MyClass):
         :param tidy: 删除重复的换行
         :param show_cmd: 结果中显示命令
         :param one_line_cmd: 不拆分命令
+        :param timeout_offset:
         :return:
         '''
-        is_ok, result = self.send_command(commands, show_cmd=show_cmd, one_line_cmd=one_line_cmd, **kwargs)
+        is_ok, result = self.send_command(commands, show_cmd=show_cmd, one_line_cmd=one_line_cmd,
+                                          timeout_offset=timeout_offset,
+                                          **kwargs)
         assert is_ok, result
         if tidy:
             result = replace(result)

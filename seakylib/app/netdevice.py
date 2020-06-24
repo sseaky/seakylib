@@ -37,6 +37,8 @@ class NetDeviceClass(MyClass):
     def init_conn(self):
         is_ok, result = self._complete_param()
         assert is_ok, result
+        if 'log' not in self.kwargs and self.log:
+            self.kwargs['log'] = self.log
         if isinstance(self.miko_param, dict):
             if self.ip and not self.miko_param.get('ip'):
                 self.miko_param.update({'ip': self.ip})
@@ -120,11 +122,14 @@ class NetDeviceArgParse(ArgParseClass):
         ArgParseClass.__init__(self, *args, **kwargs)
         self.add_base()
 
-    def add_device(self, group='Single Device'):
+    def add_device(self, group='Single Device', snmp_timeout=10, snmp_bulksize=1000, cli_timeout=10):
         self.add('--ip', required=True, help='目标IP', group=group)
         self.add('--os', default='', help='目标系统', group=group)
-        self.add('--snmp_timeout', default=10, type=int, help='snmp超时, 10s', group=group)
-        self.add('--cli_timeout', default=10, type=int, help='cli超时, 10s', group=group)
+        self.add('--snmp_timeout', default=snmp_timeout, type=int, help='snmp超时, {}s'.format(snmp_timeout), group=group)
+        self.add('--snmp_bulksize', default=snmp_bulksize, type=int, help='snmpwalk bulksize, {}'.format(snmp_bulksize),
+                 group=group)
+        self.add('--cli_timeout', default=cli_timeout, type=int, help='cli超时, {}s'.format(cli_timeout), group=group)
+        # self.add('--cli_telnet_enable', default=10, type=int, help='cli使用telnet', group=group)
 
 
 class MultiNetDeviceArgParse(MrunArgParse):

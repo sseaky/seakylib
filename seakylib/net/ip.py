@@ -50,3 +50,13 @@ def make_short_mask(long_mask):
     return 24 if not long_mask \
         else long_mask if isinstance(long_mask, int) \
         else len(''.join(bin(int(x))[2:].replace('0', '') for x in long_mask.split('.')))
+
+
+def find_network(ip, mask=24):
+    '''
+    根据mask找到网段
+    :param ip: 
+    :param mask: 
+    :return: 
+    '''
+    return ipaddress.ip_interface('{}/{}'.format(ip, mask)).network

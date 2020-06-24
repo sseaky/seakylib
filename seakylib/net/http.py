@@ -50,13 +50,16 @@ class Http(MyClass):
     def __getattr__(self, item):
         return self.__dict__.get(item, self.kwargs.get(item))
 
-    def fetch(self, url, ret_bs=True, ret_raw=False, method='GET', tries=3, ret_dic=False, charset=None, **kwargs):
+    def fetch(self, url, ret_bs=True, ret_raw=False, method='GET', tries=3, retry_code=None, retry_not_200=False,
+              ret_dic=False, charset=None, **kwargs):
         '''
         :param url:
         :param ret_bs: 返回bs4 obj
         :param ret_raw: 返回原始数据
         :param method: GET、POST
         :param tries: 重试次数
+        :param retry_code: 重试某些code
+        :param retry_not_200: 重试非200
         :param ret_dic: 返回url, args, result的字典
         :param charset:
         :param kwargs:
@@ -68,16 +71,29 @@ class Http(MyClass):
         if not re.search(r'^http', url, re.I) and self.url_root:
             url = re.sub('/*$', '', self.url_root) + '/' + re.sub('^/*', '', url)
         flag = False
+        retry_code = retry_code or []
+        code_reason = ''
         for i in range(tries):
             try:
                 _raw = self.session.post(url, **d) if method == 'POST' else self.session.get(url, **d)
-                flag = True
-                url = _raw.url
-                break
+                code = _raw.status_code
+                if retry_not_200 and code != 200:
+                    code_reason = code
+                    continue
+                elif code in retry_code:
+                    code_reason = code
+                    continue
+                else:
+                    flag = True
+                    url = _raw.url
+                    break
             except Exception as e:
                 error = e
         if not flag:
-            raise Exception('fetch {} error({}). {}'.format(url, error, d))
+            if code_reason:
+                raise Exception('fetch {} fail, status_code={}. {}'.format(url, code_reason, d))
+            else:
+                raise Exception('fetch {} error, {}. {}'.format(url, error, d))
         if ret_raw:
             self.fetch_after(_raw, None, None)
             return {'result': _raw, 'url': url, 'kwargs': d} if ret_dic else _raw

@@ -331,11 +331,13 @@ class MyModel:
                 if k1 in data_old[k] and k1 in self.cols_name:
                     if v1 and data_old[k][k1] is None:  # 原数据为None，需要替换
                         pass
-                    elif v1 == data_old[k][k1]: # 数据不变
+                    elif v1 == data_old[k][k1]:  # 数据不变
                         continue
                     elif type(v1) == type(data_old[k][k1]) or not fuzz_digit:  # 模糊类型
                         pass
-                    elif change_type(v1, to_type=type(data_old[k][k1])) == data_old[k][k1]:
+                    elif change_type(v1, to_type=type(data_old[k][k1])) == data_old[k][k1] \
+                            and data_old[k][k1] is not None:
+                        # 转变类型，但要考虑0和None的区别
                         continue
                     if k1 not in changed_cols:
                         changed_cols.append(k1)
@@ -415,7 +417,8 @@ class MyModel:
                action_add=True, action_delete=False, action_mark_miss=False, func_skip=None,
                param_query=None, param_add=None, param_update=None, param_delete=None,
                with_detail=False, with_sqls=False,
-               timed=True, last=True,
+               time_check='time_check', time_update=None, time_insert=None,
+               last=True,
                use_df=False, df_to_str=False,
                block=2000, dryrun=False, ret_str=False, fuzz_digit=True, **kwargs):
         '''
@@ -435,7 +438,9 @@ class MyModel:
         :param param_delete:
         :param with_detail:  返回详细列表
         :param with_sqls:  返回详细sql
-        :param timed:  添加更改时间，time_update
+        :param time_check:  检查时间，手工添加
+        :param time_insert:  插入时间，time_insert, 可使用dt DATETIME DEFAULT CURRENT_TIMESTAMP
+        :param time_update:  更新时间，可设置 `time_update` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
         :param last:  如果有last_<col>存在，自动更新
         :param use_df:  使用df方法
         :param df_to_str:  使用df时，两个df merge时, 类型不同会报错, 强制转成str
@@ -475,22 +480,24 @@ class MyModel:
         items_new, items_need_update, items_miss = d['items_new'], d['items_need_update'], d['items_miss']
         changed_cols = d['changed_cols']
         now = datetime_to_string()
+        sqls = []
         if items_new:
             if action_add and not dryrun:
-                is_ok, msg = self.add_all(items_new, timed=timed, now=now, dryrun=dryrun, **param_add)
-                assert is_ok, msg
+                is_ok, result = self.add_all(items_new, time_insert=time_insert, now=now, dryrun=dryrun, **param_add)
+                assert is_ok, result
+                sqls.extend(result['sqls'])
 
-        sqls = []
         if items_need_update:
             i = 0
             while True:
                 if i > len(items_need_update):
                     break
                 sub = items_need_update[i:i + block]
-                is_ok, sql = self._update_case(changed_cols, sub, key, force_condition, timed=timed, now=now,
+                is_ok, result = self._update_case(changed_cols, sub, key, force_condition,
+                                               time_update=time_update, now=now,
                                                dryrun=dryrun)
-                assert is_ok, sql
-                sqls.append(sql)
+                assert is_ok, result
+                sqls.extend(result['sqls'])
                 i += block
         if items_miss:
             if action_mark_miss:
@@ -508,11 +515,12 @@ class MyModel:
                                             force_condition=force_condition,
                                             **param_delete)
                 assert is_ok, result
-                sqls.append(result['sql'])
-        if timed and 'time_check' in self.cols_name:
+                sqls.extend(result['sqls'])
+        if time_check and time_check in self.cols_name:
             cond = 'where {0} in ({1})'.format(key, ','.join(add_quote(list(data_new.keys())))) + (
                 ' and {}'.format(force_condition) if force_condition else '')
-            sql2 = 'update {0} set `{1}`="{2}" {3}'.format(self.model.__tablename__, 'time_check', now, cond)
+            sql2 = 'update {0} set `{1}`="{2}" {3}'.format(self.model.__tablename__, time_check, now, cond)
+            sqls.append(sql2)
             if not dryrun:
                 r = self.session.execute(sql2)
                 self.commit()
@@ -522,6 +530,7 @@ class MyModel:
              ('skiped', len(d['items_skip'])),
              ('nochange', len(data_old) - len(items_miss) - len(items_need_update)),
              ('changed', len(items_need_update)),
+             ('changed_cols', d['changed_cols']),
              ('only_changed_last', d['only_change_last']),
              ('dryrun', dryrun),
              ('updated', len(items_need_update) if not dryrun else 0),
@@ -545,18 +554,19 @@ class MyModel:
                 for k in ['items_new', 'items_miss', 'items_need_update', 'items_skip']:
                     r[k] = d[k]
             if with_sqls:
-                r['sql'] = sqls
+                r['sqls'] = sqls
 
         return True, r
 
-    def _update_case(self, cols, lst, key, force_condition, timed=True, now=None, time_col='time_update',
+    def _update_case(self, cols, lst, key, force_condition, time_update=None, now=None,
                      dryrun=False):
         '''
         :param cols:    cols should be modified
         :param lst:     [(data_new, data_old)]
         :param key:     index
         :param force_condition:
-        :param timed:
+        :param time_update:
+        :param time_check:
         :param now:
         :param dryrun:
         :param time_col:
@@ -575,16 +585,54 @@ class MyModel:
         st = ',\n'.join([' `{0}` = case `{1}` '.format(k, key) + ' '.join(v) + ' END' for k, v in d.items()])
         cond = 'where {0} in ({1})'.format(key, ','.join(l)) + (
             ' and {}'.format(force_condition) if force_condition else '')
+        sqls = []
         sql = 'update {0}\n set {1} {2}'.format(self.model.__tablename__, st, cond)
         if not dryrun:
             r = self.session.execute(sql)
             self.commit()
-        if timed and time_col in self.cols_name:
-            sql1 = 'update {0} set `{1}`="{2}" {3}'.format(self.model.__tablename__, time_col, now, cond)
+        sqls.append(sql)
+        if time_update and time_update in self.cols_name:
+            sql1 = 'update {0} set `{1}`="{2}" {3}'.format(self.model.__tablename__, time_update, now, cond)
+            sqls.append(sql1)
             if not dryrun:
                 r = self.session.execute(sql1)
                 self.commit()
-        return True, sql
+        return True, {'message': '_update_case done', 'sqls': sqls}
+
+    @catch_sql_exception
+    def update_stat(self, stat_new, pk, col_is_ok='is_ok',
+                    col_fail_times='fail_times', col_succ_times='succ_times',
+                    **kwargs):
+        '''
+        统计job的执行结果
+        :param stat_new:    每一个job的stat
+        :param pk:
+        :param col_is_ok:
+        :param col_fail_times:
+        :param col_succ_times:
+        :param kwargs:
+        :return:
+        '''
+        is_ok, result = self.query(condition='{}={}'.format(pk, stat_new[pk]))
+        assert is_ok, result
+        stat_old = result[0] if len(result) else {}
+        d = {}
+        for col in [col_succ_times, col_fail_times]:
+            if col in self.cols_name:
+                if not stat_old.get(col):
+                    d[col] = 0
+                else:
+                    d[col] = stat_old[col]
+        if stat_new[col_is_ok]:
+            d[col_succ_times] += 1
+        else:
+            d[col_fail_times] += 1
+        stat_new.update(d)
+        data_old = {stat_new[pk]: stat_old} if stat_old else {}
+        is_ok, result = self.update(data_new={stat_new[pk]: stat_new}, data_old=data_old, key=pk,
+                                    **kwargs)
+        assert is_ok, result
+        return is_ok, result
 
     @check_writable
     @catch_sql_exception
@@ -613,47 +661,51 @@ class MyModel:
 
     @check_writable
     @catch_sql_exception
-    def add_all(self, datas, block=1000, timed=True, now=None, time_col='time_insert', dryrun=False, **kwargs):
+    def add_all(self, datas, block=1000, time_insert=None, now=None, dryrun=False, **kwargs):
         '''
         :param datas:
         :param block:   分割块
-        :param timed:   自动添加时间，time_insert
+        :param time_insert:   自动添加时间，
         :param now:   当前时间
         :param time_col:
         :param kwargs:
         :return:
         '''
-        if timed and time_col in self.cols_name:
+        if time_insert and time_insert in self.cols_name:
             if not now:
                 now = datetime_to_string()
             for i, x in enumerate(datas):
-                if time_col not in x.keys():
-                    x[time_col] = now
-                if 'time_update' in self.cols_name and 'time_update' not in x.keys():
-                    x['time_update'] = now
+                if time_insert not in x.keys():
+                    x[time_insert] = now
+                # if 'time_update' in self.cols_name and 'time_update' not in x.keys():
+                #     x['time_update'] = now
         if block <= 0:
             block = 1000
         i = 0
         ids = []
+        sqls = []
         while True:
             _datas = datas[i * block:(i + 1) * block]
             if not _datas:
                 break
-            is_ok, _ids = self._add_all(_datas, **kwargs)
-            assert is_ok, _ids
-            ids.extend(_ids)
+            is_ok, result = self._add_all(_datas, dryrun=dryrun, **kwargs)
+            assert is_ok, result
+            if 'ids' in result:
+                ids.extend(result.get('ids'))
+            sqls.extend(result['sqls'])
             i += 1
-        return True, ids if kwargs.get('get_ids') else 'add all done.'
+        return True, {'message': 'add all done.', 'ids': ids, 'sqls': sqls}
 
     @check_writable
     @catch_sql_exception
-    def _add_all(self, datas, mode='save', get_ids=True):
+    def _add_all(self, datas, mode='save', get_ids=True, dryrun=False):
         '''
         :param datas:
         :param mode: 'add' is operated one by one, return obj. 'save' is batch insert into data, no return by default
         :param get_ids: return ids of data
         :return:
         '''
+        sql = ''
         _datas = []
         for i, x in enumerate(datas):
             _datas.append({k: x.get(k) for k in self.cols_name})
@@ -671,13 +723,17 @@ class MyModel:
                 self.model.__tablename__, ','.join(add_quote(cols, quote='`')),
                 ','.join(['({})'.format(','.join(self.add_quote_by_col_type(x[k], k) for k in cols)) for x in datas]))
             # sql = sql.replace('None', 'null')
-            self.session.execute(sql)
-        self.commit()
+            if not dryrun:
+                self.session.execute(sql)
+                self.commit()
+        d = {'message': 'add all done.', 'sqls': [sql]}
+        if dryrun:
+            return True, d
 
         ids = []
         kw = None
         if not get_ids:
-            return True, 'add all done.'
+            return True, d
         if mode == 'save':
             for k in datas[0].keys():
                 if datas[0][k] and k in self.cols_unique:
@@ -698,7 +754,9 @@ class MyModel:
             for i, obj in enumerate(objs):
                 datas[i]['id'] = obj.id
                 ids.append(obj.id)
-        return True, ids
+
+        d['ids'] = ids
+        return True, d
 
     @check_writable
     @catch_sql_exception
@@ -723,7 +781,7 @@ class MyModel:
             sql = 'delete from {0} {1}'.format(self.model.__tablename__, condition)
             self.session.execute(sql)
             self.commit()
-            return True, {'msg': 'delete with condition done.', 'sql': sql, 'items': items}
+            return True, {'msg': 'delete with condition done.', 'sqls': [sql], 'items': items}
 
         if batch:
             assert isinstance(data, (list, dict)), 'obj must be list or dict in batch delete mode.'
@@ -745,7 +803,7 @@ class MyModel:
                 self.session.execute(sql)
                 # self.flush()
                 self.commit()
-            return True, {'msg': 'batch delete done.', 'sql': sql, 'items': items}
+            return True, {'msg': 'batch delete done.', 'sqls': [sql], 'items': items}
         else:
             if isinstance(data, dict):
                 status, ex_obj = self.get_obj(data)
@@ -757,7 +815,7 @@ class MyModel:
             if isinstance(obj, self.model):
                 self.session.delete(obj)
                 self.commit()
-            return True, {'msg': 'obj delete done.', 'sql': '', 'items': obj.id}
+            return True, {'msg': 'obj delete done.', 'sqls': [], 'items': obj.id}
 
     def commit(self):
         self.session.flush()
@@ -922,7 +980,7 @@ class MyModel:
                                                            'limit {}'.format(limit) if limit else '')
         is_ok, result = self._query2(sql, **kwargs) if use_pd else self._query1(sql, **kwargs)
         if with_sql:
-            return is_ok, {'data': result, 'sql': sql}
+            return is_ok, {'data': result, 'sqls': [sql]}
         else:
             return is_ok, result
 
