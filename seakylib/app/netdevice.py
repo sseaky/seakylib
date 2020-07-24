@@ -3,7 +3,7 @@
 # @Author: Seaky
 # @Date:   2019/8/20 10:15
 
-from ..func.base import MyClass, func_done
+from ..func.base import MyClass
 from ..func.mrun import MrunArgParse
 from ..func.parser import ArgParseClass
 from ..probe.miko.connect import BaseDevice
@@ -11,53 +11,34 @@ from ..probe.snmp import Snmp
 
 
 class NetDeviceClass(MyClass):
-    def __init__(self, ip=None, miko_param=None, snmp_param=None, *args, **kwargs):
+    def __init__(self, ip=None, os=None, miko_param=None, snmp_param=None, *args, **kwargs):
         '''
         :param ip:
         :param miko_param:  {'os': os, 'telnet_enable': True, 'ssh_enable': True,
                 'ip': ip, password: [{'username':, 'password':, 'secret':}, {}, ...]}
         :param snmp_param:  {'community': SNMP_COMMUNITY, 'ip': ip, 'port':161, timeout: 10, bulk_size: 10}
         :param args:
-        :param kwargs:
-            func_auto_param:  补齐miko_param/snmp_param参数
         '''
         MyClass.__init__(self, *args, **kwargs)
-        self.ip = ip
         self.miko_param = miko_param
         self.snmp_param = snmp_param
-        self.init_conn()
-
-    def _complete_param(self):
-        '''
-        在初始化前，修改某些参数
-        :return:
-        '''
-        return True, func_done()
+        if not ip:
+            d = miko_param or snmp_param
+            if isinstance(d, dict):
+                ip = d['ip']
+        assert ip, 'no ip given.'
+        self.ip = ip
+        if not os:
+            if isinstance(miko_param, dict):
+                os = miko_param['os']
+        self.os = os
 
     def init_conn(self):
-        is_ok, result = self._complete_param()
-        assert is_ok, result
-        if 'log' not in self.kwargs and self.log:
-            self.kwargs['log'] = self.log
-        if isinstance(self.miko_param, dict):
-            if self.ip and not self.miko_param.get('ip'):
-                self.miko_param.update({'ip': self.ip})
-            # self.kwargs.update(self.miko_param)
-            # if self.kwargs.get('log'):
-            #     self.kwargs['log'] = self.log
-            self.cli = BaseDevice(**self.miko_param, **self.kwargs)
-            if not self.ip:
-                self.ip = self.cli.ip
-        if isinstance(self.snmp_param, dict):
-            if self.ip and not self.snmp_param.get('ip'):
-                self.snmp_param.update({'ip': self.ip})
-            # self.kwargs.update(self.snmp_param)
-            # if self.kwargs.get('log'):
-            #     self.kwargs['log'] = self.log
-            self.snmp = Snmp(**self.snmp_param, **self.kwargs)
-            if not self.ip:
-                self.ip = self.snmp.ip
-        return True, func_done()
+        if self.miko_param:
+            self.cli = BaseDevice(**self.miko_param, log=self.log)
+        if self.snmp_param:
+            self.snmp = Snmp(**self.snmp_param, log=self.log)
+        return True, self.func_done()
 
     def do(self):
         funcs = {'comware': self.do_comware,
@@ -122,7 +103,7 @@ class NetDeviceArgParse(ArgParseClass):
         ArgParseClass.__init__(self, *args, **kwargs)
         self.add_base()
 
-    def add_device(self, group='Single Device', snmp_timeout=10, snmp_bulksize=1000, cli_timeout=10):
+    def add_device(self, group='Single Device', snmp_timeout=30, snmp_bulksize=1000, cli_timeout=30):
         self.add('--ip', required=True, help='目标IP', group=group)
         self.add('--os', default='', help='目标系统', group=group)
         self.add('--snmp_timeout', default=snmp_timeout, type=int, help='snmp超时, {}s'.format(snmp_timeout), group=group)

@@ -105,6 +105,7 @@ def execute_sql(sql, print_error=False, **kwargs):
     :return:
     '''
     p = execute(make_cmd_sql(sql, **kwargs))
+    p.sql = sql
     if p.stdout.startswith('ERROR '):
         if print_error:
             print(p.stdout)
@@ -148,6 +149,7 @@ def execute_sql_remote(sql, print_error=False, **kwargs):
     '''
     kwargs['ssh_quite'] = True
     p = execute_ssh_cmd(cmd=make_cmd_sql(sql, **kwargs), **kwargs)
+    p.sql = sql
     if p.stdout.startswith('ERROR '):
         if print_error:
             print(p.stdout)

@@ -10,13 +10,16 @@ import logging.config
 from copy import deepcopy
 from pathlib import Path
 
+from .time import datetime_to_string
 from ..os.info import get_pwd, get_caller
 
 
-def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True, write=True,
+def make_logger(log=None, name=None, stem=None, log_dir='log', work_dir=None, console=True, write=False,
                 focus_error=True, multi_process=True,
-                level='INFO', log=None, **kwargs):
+                level='INFO', debug=False, **kwargs):
     '''
+    :param log:
+    :param simple_log:   默认使用print
     :param name: logger name
     :param stem: file stem, default filename without type
     :param log_dir:
@@ -26,11 +29,12 @@ def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True
     :param focus_error:     增加error日志
     :param multi_process:   支持多进程
     :param level:
-    :param kwargs:
+    :param debug:   方便设置debug
+    :param level:
         {'handlers': {...}}
     :return:
     '''
-    if log:
+    if isinstance(log, logging.Logger):
         return log
     work_dir = work_dir or get_pwd()
     caller = get_caller()
@@ -89,33 +93,43 @@ def make_logger(name=None, stem=None, log_dir='log', work_dir=None, console=True
         d['handlers'].update(kwargs['handlers'])
 
     d['loggers'] = {name: {'handlers': d['handlers'].keys(),
-                           'level': level, }}
+                           'level': 'DEBUG' if debug else level, }}
 
     logging.config.dictConfig(d)
     logger = logging.getLogger(name)
     return logger
 
 
+LEVELS = {'TRACE': 0, 'DEBUG': 1, 'INFO': 2, 'WARN': 3, 'ERROR': 4, 'FATAL': 5}
+
+
 class SimpleLog:
-    def __init__(self, log=None, use_print=False, *args, **kwargs):
-        self.use_print = use_print
-        if not use_print:
-            self.log = log or make_logger(log=log, *args, **kwargs)
+    def __init__(self, level='INFO', debug=False, console=True):
+        '''
+        :param level:
+        :param debug:
+        :param console:
+        有个问题，self.log.info时，打印的是本文件名，而不是实际调用的文件，不是很方便
+        '''
+        if debug:
+            level = 'DEBUG'
+        self.level = level
+        self.console = console
 
-    def info(self, *args, **kwargs):
-        if self.use_print:
-            print('INFO: {}'.format(*args))
-        else:
-            self.log.info(*args, **kwargs)
+    def print(self, cur_level, *args):
+        if not self.console:
+            return
+        if LEVELS.get(cur_level, 9) >= LEVELS.get(self.level):
+            print('[{}] {}: {}'.format(datetime_to_string(), cur_level, *args))
 
-    def error(self, *args, **kwargs):
-        if self.use_print:
-            print('ERROR: {}'.format(*args))
-        else:
-            self.log.error(*args, **kwargs)
+    def debug(self, *args):
+        self.print('DEBUG', *args)
 
-    def warn(self, *args, **kwargs):
-        if self.use_print:
-            print('WARN: {}'.format(*args))
-        else:
-            self.log.warning(*args, **kwargs)
+    def info(self, *args):
+        self.print('INFO', *args)
+
+    def error(self, *args):
+        self.print('ERROR', *args)
+
+    def warn(self, *args):
+        self.print('WARNING', *args)

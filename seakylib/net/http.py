@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 
 from ..func.base import MyClass
 from ..func.mrun import MultiRun
+from ..func.parser import ArgParseClass
 
 warnings.filterwarnings("ignore")
 
@@ -26,32 +27,49 @@ UA = {'ie': 'Mozilla/5.0 (MSIE 10.0; Windows NT 6.1; Trident/5.0)',
       'android': 'Mozilla/5.0 (Linux; U; Android 2.3.7; en-us; Nexus One Build/FRF91) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1',
       'wx': 'Mozilla/5.0 (iPhone; CPU iPhone OS 7_0_4 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Mobile/11B554a MicroMessenger/6.2.1'}
 
+HTTP_TIMEOUT = 40
+HTTP_RETRY = 3
+
 
 class Http(MyClass):
-    def __init__(self, random_ua=False, *args, **kwargs):
+    def __init__(self, browser_random=False, browser='chrome', http_timeout=HTTP_TIMEOUT, ssl_verify=False,
+                 http_proxy=None, http_headers=None,
+                 http_retry=HTTP_RETRY, *args, **kwargs):
         '''
-        :param random_ua:   随机UA
+        :param ua_random:   随机UA
+        :param ua:   ie/chrome/firefox/iphone/android/wx
+        :param http_timeout:
+        :param ssl_verify:
+        :param http_proxy:  str, '127.0.0.1:8087', socks代理使用net.proxy库
         :param args:
         :param kwargs:
         '''
         MyClass.__init__(self, *args, **kwargs)
         self.kwargs = kwargs
+        self.control['browser'] = browser
+        self.control['browser_random'] = browser_random
+        self.control['http_timeout'] = http_timeout
+        self.control['http_retry'] = http_retry
+        self.control['ssl_verify'] = ssl_verify
+        self.control['http_proxy'] = {'http': http_proxy, 'https': http_proxy} if isinstance(http_proxy, str) else None
+
         self.session = requests.session()
-        if not random_ua:
-            self.session.headers.update({'User-Agent': UA[kwargs.get('ua', 'chrome')]})
+        if not browser_random:
+            self.session.headers.update({'User-Agent': UA.get(browser, 'chrome')})
         else:
             tag, ua = random.choice(list(UA.items()))
             self.session.headers.update({'User-Agent': ua})
-        self.proxies = kwargs.get('proxies')
-        self.ssl_verify = kwargs.get('ssl_verify', False)
-        self.status = {}  # for some vars preserve
+        if isinstance(http_headers, dict):
+            self.session.headers.update(http_headers)
+        # self.status = {}  # for some vars preserve
         self.url_root = kwargs.get('url_root')
 
     def __getattr__(self, item):
         return self.__dict__.get(item, self.kwargs.get(item))
 
-    def fetch(self, url, ret_bs=True, ret_raw=False, method='GET', tries=3, retry_code=None, retry_not_200=False,
-              ret_dic=False, charset=None, **kwargs):
+    def fetch(self, url, ret_bs=True, ret_raw=False, method='GET', tries=None, timeout=None, retry_code=None,
+              retry_not_200=False,
+              ret_dic=False, ret_json=False, charset=None, **kwargs):
         '''
         :param url:
         :param ret_bs: 返回bs4 obj
@@ -66,7 +84,9 @@ class Http(MyClass):
             get-params, post-data
         :return:
         '''
-        d = {'verify': False, 'timeout': 40, 'proxies': self.proxies}
+        d = {'verify': self.default('ssl_verify'), 'timeout': timeout or self.default('http_timeout'),
+             'proxies': self.default('http_proxy')}
+        tries = tries or self.default('http_retry')
         d.update(kwargs)
         if not re.search(r'^http', url, re.I) and self.url_root:
             url = re.sub('/*$', '', self.url_root) + '/' + re.sub('^/*', '', url)
@@ -97,6 +117,8 @@ class Http(MyClass):
         if ret_raw:
             self.fetch_after(_raw, None, None)
             return {'result': _raw, 'url': url, 'kwargs': d} if ret_dic else _raw
+        if ret_json:
+            return _raw.json()
         _raw = _raw.content
         if not charset:
             m = re.search('charset=\W*(?P<charset>\w+)', _raw[:200].decode(errors='ignore'))
@@ -116,10 +138,12 @@ class Http(MyClass):
         '''
         return True, self.fetch(*args, **kwargs)
 
-    def multi_fetch(self, kws, process_num=5, process_time=None, inline=False):
+    def multi_fetch(self, kws, process_num=20, process_time=None, inline=False):
         '''
-        :param graphs: [{'local_graph_id': xxx}]
-        :param ignore_error: 错误继续
+        :param kws: [{'local_graph_id': xxx}]
+        :param process_num: [{'local_graph_id': xxx}]
+        :param process_time: [{'local_graph_id': xxx}]
+        :param inline: 错误继续
         :return:
         '''
         mr = MultiRun(func=self.multi_job, func_kws=kws, log=self.log, add_log_to_common_kw=False,
@@ -130,7 +154,7 @@ class Http(MyClass):
 
     def fetch_after(self, *args):
         '''
-        第次交互后，可能需要执行的动作，如获取token
+        每次交互后，可能需要执行的动作，如获取token
         :param args:
         :return:
         '''
@@ -145,7 +169,9 @@ class Http(MyClass):
     def save_stat(self, fn=None):
         fn = fn or 'status.json'
         json.dump(
-            {'cookies': self.session.cookies.get_dict(), 'status': self.status},
+            {'cookies': self.session.cookies.get_dict()
+             # , 'status': self.status
+             },
             open(str(fn), 'w'), sort_keys=True, indent=True)
 
     def load_stat(self, fn=None):
@@ -153,7 +179,7 @@ class Http(MyClass):
         if Path(fn).exists():
             d = json.load(open(str(fn)))
             self.session.cookies.update(d['cookies'])
-            self.status.update(d['status'])
+            # self.status.update(d['status'])
             return True
 
     def login(self, load=True, save=True):
@@ -202,6 +228,17 @@ def login_check(f):
 def url2list(url):
     # 转dict需要注意相同的key会被覆盖
     return parse.parse_qsl(url)
+
+
+class HttpArgParse(ArgParseClass):
+    def __init__(self, *args, **kwargs):
+        ArgParseClass.__init__(self, *args, **kwargs)
+
+    def add_http(self, group='Http', http_timeout=HTTP_TIMEOUT, http_retry=HTTP_RETRY, browser='chrome'):
+        self.add('--http_timeout', type=int, default=http_timeout, help='http超时时间，{}'.format(http_timeout), group=group)
+        self.add('--http_retry', type=int, default=http_retry, help='重试次数, {}'.format(http_retry), group=group)
+        self.add('--browser', default=browser,
+                 help='浏览器，ie/chrome/firefox/iphone/android/wx'.format(http_retry), group=group)
 
 
 if __name__ == '__main__':

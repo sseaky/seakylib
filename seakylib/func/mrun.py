@@ -39,15 +39,16 @@ class MultiRun(MyClass):
         '''
         MyClass.__init__(self, **kwargs)
         self.func = func
+        assert isinstance(func_kws, list), 'func_kws is not a list.'
         self.func_kws = func_kws
-        self.process_num = process_num if isinstance(process_num, int) else process_num
         self.func_common_kw = {} if func_common_kw is None else func_common_kw
         self.func_common_kw_with_obj = {} if func_common_kw_with_obj is None else func_common_kw_with_obj
-        self.process_db_session_enable = process_db_session_enable
-        self.process_db_session_kw = process_db_session_kw
-        self.show_process = show_process
-        self.show_job_result = show_job_result
-        self.mark_start_time = mark_start_time
+        self.control['process_num'] = process_num if isinstance(process_num, int) else process_num
+        self.control['process_db_session_enable'] = process_db_session_enable
+        self.control['process_db_session_kw'] = process_db_session_kw
+        self.control['show_process'] = show_process
+        self.control['show_job_result'] = show_job_result
+        self.control['mark_start_time'] = mark_start_time
         self.stat = {'miss': 0, 'success': 0, 'fail': 0, 'total': len(self.func_kws), 'timer': {}}
         if add_log_to_common_kw and 'log' not in self.func_common_kw_with_obj:
             self.func_common_kw_with_obj['log'] = self.log
@@ -58,8 +59,8 @@ class MultiRun(MyClass):
 
     def job(self, process_i, inline=False):
         self.show_process_debug('process {} start.'.format(process_i))
-        if self.process_db_session_enable and self.process_db_session_kw:
-            db_session = new_session(**self.process_db_session_kw)
+        if self.default('process_db_session_enable') and self.default('process_db_session_kw'):
+            db_session = new_session(**self.default('process_db_session_kw'))
             self.show_process_debug('process {} create data session {}.'.format(process_i, db_session))
         else:
             db_session = None
@@ -75,7 +76,7 @@ class MultiRun(MyClass):
                 self.show_process_debug('process {} get {} job, kwarg: {}'.format(process_i, v['order_in'], v['kw']))
                 if db_session:
                     self.func_common_kw_with_obj.update({'db_session': db_session})
-                st = {'start_time': start_time} if self.mark_start_time else {}
+                st = {'start_time': start_time} if self.default('mark_start_time') else {}
                 self.timer[v['idx']] = start_time
                 try:
                     is_ok, result = self.func(**v['kw'], **self.func_common_kw_with_obj, **st)
@@ -84,7 +85,7 @@ class MultiRun(MyClass):
                     is_ok, result = False, str(e)
                 elapsed_time = round(time.time() - start_time, 2)
                 v.update({'is_ok': is_ok, 'result': result, 'timer': elapsed_time})
-                if self.show_job_result:
+                if self.default('show_job_result'):
                     _log = self.log.info if is_ok else self.log.error
                     _log('{} | time: {}'.format(result, elapsed_time))
                 self.show_process_debug('process {} do {} job done. result: {}'.format(process_i, v['order_in'],
@@ -108,7 +109,7 @@ class MultiRun(MyClass):
 
     @catch_exception()
     def run(self, mrun_load=False, mrun_save=True, retry_fail=0, func_retry_skip=None, func_change=None,
-            load_fail_result=False, *args, **kwargs):
+            load_fail_result=False, show_stats=True, inline=False, process_timeout=None, *args, **kwargs):
         '''
         :param mrun_load:
         :param mrun_save:
@@ -116,10 +117,15 @@ class MultiRun(MyClass):
         :param func_retry_skip:   如果func_retry_spec是函数，则要返回True才重试，如果为None重试所有失败
         :param func_change:   可在重试时调整某些参数
         :param load_fail_result:   --load_fail_result
+        :param show_stats:   显示概要
+        :param inline:    非多进程
+        :param process_timeout:   进程超时
         :param args:
         :param kwargs:
         :return:
         '''
+        self.control['inline'] = inline
+        self.control['process_timeout'] = process_timeout
         self.cache['start_time'] = time.time()
         assert isinstance(retry_fail, int), 'retry_fail must be int.'
         result_path = self.path_temp / '{}_mrun_result.json'.format(get_caller().stem)
@@ -134,63 +140,64 @@ class MultiRun(MyClass):
                 retry_fail = 1
         else:
             self.func_kws_now = self.func_kws
-            is_ok, results = self._run(*args, **kwargs)
+            is_ok, results = self.run_real(inline=inline, process_timeout=process_timeout, *args, **kwargs)
             assert is_ok, results
 
-            # 重复运行
-            i = 0
-            _results = results
-            # presave_orders = [i for i, x in enumerate(_results)]
-            # idx_order = {x['idx']: i for i, x in enumerate(results)}
-            while i < retry_fail:
-                i += 1
-                fails = []
-                # orders = []
-                for j, x in enumerate(_results):
-                    # ori_order = presave_orders[j]
-                    if x['is_ok']:
-                        continue
-                    if hasattr(func_retry_skip, '__call__') and func_retry_skip(x):
-                        continue
-                    # kw = x['kw']
-                    if func_change and hasattr(func_change, '__call__'):
-                        x['kw'] = func_change(x)
-                    fails.append(x)
-                    # orders.append(ori_order)
-                if not fails:
-                    self.log.info('There is no failed result need to be retried.\n'.format(len(fails), i))
-                    break
-                self.func_kws_now = [x['kw'] for x in fails[:]]
-                self.log.info('Retry {} failed tasks in {} times !!!\n'.format(len(fails), i))
-                try_start_time = time.time()
-                is_ok, _results = self._run(*args, **kwargs)
-                assert is_ok, _results
-                # 有些miss result的，需要补上order_out
-                order_out_last = max([x.get('order_out', 0) for x in results])
-                for j, x in enumerate(_results):
-                    # ori_order = presave_orders[j]
-                    d = {'retry': i}
-                    d.update({k: v for k, v in x.items() if k in ['is_ok', 'result', 'timer', 'kw']})
-                    fails[j].update(d)
-                    # results[ori_order].update(d)
-                    if 'order_out' not in fails[j] and 'order_out' in x:  # 有可能retry时，又miss了
-                        fails[j]['order_out'] = x['order_out'] + order_out_last
-                # presave_orders = orders
-                retry_time = round(time.time() - try_start_time, 2)
-                self.cache['timer_retry'].append(retry_time)
-            if mrun_save:
-                dump_data(results, result_path)
+        # 重复运行
+        i = 0
+        _results = results
+        # presave_orders = [i for i, x in enumerate(_results)]
+        # idx_order = {x['idx']: i for i, x in enumerate(results)}
+        while i < retry_fail:
+            i += 1
+            fails = []
+            # orders = []
+            for j, x in enumerate(_results):
+                # ori_order = presave_orders[j]
+                if x['is_ok']:
+                    continue
+                if hasattr(func_retry_skip, '__call__') and func_retry_skip(x):
+                    continue
+                # kw = x['kw']
+                if func_change and hasattr(func_change, '__call__'):
+                    x['kw'] = func_change(x)
+                fails.append(x)
+                # orders.append(ori_order)
+            if not fails:
+                self.log.info('There is no failed result need to be retried.\n'.format(len(fails), i))
+                break
+            self.func_kws_now = [x['kw'] for x in fails[:]]
+            self.log.info('*** Retry {} failed tasks in {} times !!! ***\n'.format(len(fails), i))
+            try_start_time = time.time()
+            is_ok, _results = self.run_real(*args, **kwargs)
+            assert is_ok, _results
+            # 有些miss result的，需要补上order_out
+            order_out_last = max([x.get('order_out', 0) for x in results])
+            for j, x in enumerate(_results):
+                # ori_order = presave_orders[j]
+                d = {'retry': i}
+                d.update({k: v for k, v in x.items() if k in ['is_ok', 'result', 'timer', 'kw']})
+                fails[j].update(d)
+                # results[ori_order].update(d)
+                if 'order_out' not in fails[j] and 'order_out' in x:  # 有可能retry时，又miss了
+                    fails[j]['order_out'] = x['order_out'] + order_out_last
+            # presave_orders = orders
+            retry_time = round(time.time() - try_start_time, 2)
+            self.cache['timer_retry'].append(retry_time)
+        if mrun_save:
+            dump_data(results, result_path)
         self.results = results
         self.cache['timer_mrun'] = round(time.time() - self.cache['start_time'], 2)
         self.show_miss()
         self.stat_results(results)
-        self.show_results()
+        if show_stats:
+            self.show_results()
         return is_ok, results
 
-    def _run(self, inline=False, process_timeout=None):
+    def run_real(self, inline=False, process_timeout=None):
         '''
         :param process_timeout: 进程超时
-        :param load: 读取结果
+        :param inline: 非多进程
         :return:
             {
             'is_ok': False,
@@ -201,7 +208,6 @@ class MultiRun(MyClass):
             'kw': {}
             }
         '''
-        self.inline = inline
         if not inline:
             m = Manager()
             self.q_input = m.Queue()
@@ -226,7 +232,8 @@ class MultiRun(MyClass):
         if inline:
             self.job(1, inline=True)
         else:
-            process_num = min(self.process_num, len(self.func_kws_now))
+            process_num = min(self.default('process_num'), len(self.func_kws_now))
+            self.cache['process_num_use'] = process_num
             self.show_debug('start {} process.'.format(process_num))
             ps = []
             for process_i in range(1, process_num + 1):
@@ -272,7 +279,7 @@ class MultiRun(MyClass):
         return True, results
 
     def show_process_debug(self, *obj):
-        self.show_by_flag(self.show_process, *obj)
+        self.show_by_flag(self.default('show_process'), *obj)
 
     def show_miss(self):
         for i, x in enumerate(self.results):
@@ -322,14 +329,16 @@ class MultiRun(MyClass):
 
     def show_results(self):
         msg = 'Total: {total}, Success: {success}, Fail: {fail}, Miss: {miss}. '.format(**self.stat)
-        msg += 'Duration: {timer_mrun}s'.format(**self.cache)
+        msg += 'Duration: {timer_mrun}s, Process: {process_num}, Timeout: {process_timeout}, Inline: {inline}.'.format(
+            **self.cache, **self.control)
         if self.cache['timer_retry']:
             msg += ', including '
             l = []
             for i, x in enumerate(self.cache['timer_retry']):
                 l.append('retry{}: {}s'.format(i + 1, x))
             msg += ', '.join(l)
-        msg += '.'
+            if l:
+                msg += '.'
         self.log.info(msg)
 
     def update_results(self, model, key, datas=None, sql=None, last_cols=None, timed=True, ret_str=True):

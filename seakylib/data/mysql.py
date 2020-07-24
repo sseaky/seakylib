@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 from ..data.pd import set_none
 from ..func.string import change_type, add_quote
 from ..func.time import datetime_to_string
+# from ..func.log import make_logger
 
 
 # sqlacodegen --outfile=librenms.py mysql+pymysql://test:test@xx.xx.xx.xx:3306/testdb --tables <table>
@@ -135,6 +136,7 @@ class MyModel:
             self.init_model()
         self.pk = None
         self.verbose = kwargs.get('verbose')
+        # self.log = make_logger(log)
 
     def init_model(self):
         self.cols = {x.name: x for x in self.model.__table__.columns}
@@ -795,7 +797,7 @@ class MyModel:
             elif isinstance(data, dict):
                 values = ','.join(pattern.format(v[key]) for k, v in data.items())
             sql = 'delete from `{0}` where `{1}` in ({2})'.format(self.model.__tablename__, key, values)
-            sql += 'and {}'.format(force_condition) if force_condition else ''
+            sql += ' and {}'.format(force_condition) if force_condition else ''
             sql1 = re.sub('^delete from', 'select * from', sql, re.I)
             is_ok, items = self.query(sql=sql1)
             assert is_ok, items

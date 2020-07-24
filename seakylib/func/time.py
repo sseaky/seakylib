@@ -3,11 +3,11 @@
 # @Author: Seaky
 # @Date:   2019/8/14 11:56
 
+import re
 from datetime import datetime
 
 # pip3 install python-dateutil
 from dateutil.relativedelta import relativedelta
-import re
 
 fmt1 = '%Y-%m-%d %H:%M:%S'
 fmt2 = '%Y%m%d%H%M%S'
@@ -17,9 +17,12 @@ fmt3 = '%m%d'
 # def datetime_now():
 #     return datetime.now()
 
+def last_peroid(per='days'):
+    return datetime.now() - relativedelta(**{per: 1})
+
 
 def last_month():
-    return datetime.now() - relativedelta(months=1)
+    return last_peroid(per='months')
 
 
 def datetime_to_string(dt=None, fmt=None):

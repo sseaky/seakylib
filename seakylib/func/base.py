@@ -4,6 +4,7 @@
 # @Date:   2019/8/14 12:05
 
 
+import logging
 import re
 import time
 import traceback
@@ -14,7 +15,7 @@ from pathlib import Path
 from pprint import pprint
 
 from .log import make_logger
-from .string import arg2list
+from .string import arg2list, str2list
 from ..os.info import get_pwd
 from ..os.oper import dump_data, load_data
 
@@ -265,44 +266,65 @@ def run_functions(*funcs, message=None, order='and', watchdog=None, **kwargs):
 
 
 class MyClass:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, log=None, log_params=None, *args, **kwargs):
         '''
         :param args:
+        :param log:    customer log
+        :param make_logger的参数
+            quite
+            debug   logging.debug, catch_exception显示trace信息
         :param kwargs:
             path_output
             path_temp
-            log:    customer log
-            log_params
             show_tick  显示count_time的值
-            log_params  make_logger的参数
-            quite
-            debug   logging.debug, catch_exception显示trace信息
         '''
         self.kwargs = kwargs
         self.pwd = get_pwd()
         self.path_output = self.pwd / Path(kwargs.get('path_output', 'output'))
         self.path_temp = self.pwd / Path(kwargs.get('path_temp', 'temp'))
         # 默认log是打印到console
-        log_params = kwargs.get('log_params', {})
         self.quite = kwargs.get('quite')
         # cache存放过程数据, 最好不要放入无法dump的数据
         self.verbose = kwargs.get('verbose')
         self.debug = kwargs.get('debug')
         # self.traceback = kwargs.get('traceback')
         self.db_session = kwargs.get('db_session')
-        self.debug_info = {'error': [], 'timer': OrderedDict(), 'exception': [], 'warn': []}
+        self.debug_info = {'error': [], 'timer': OrderedDict(), 'exception': [], 'warn': [], 'func_done': OrderedDict()}
         self.cache = {'message': ''}
         self.control = {}
-        if self.debug:
-            log_params.update({'level': 'DEBUG'})
-        if self.quite:
-            log_params.update({'console': False})
-        # self.log = kwargs.get('log', make_logger(self.__class__.__name__, **log_params))
-        # 两个类建立默认log时，前者会没有输出？
-        self.log = kwargs['log'] if 'log' in kwargs else make_logger(self.__class__.__name__, **log_params)
+
+        if isinstance(log, logging.Logger):
+            self.log = log
+        else:
+            if not log_params:
+                log_params = {}
+            log_params.update(
+                {'debug': self.debug, 'console': not self.quite, 'name': self.__class__.__name__, 'simple_log': False})
+            # 两个类建立默认log时，前者会没有输出？
+            self.log = make_logger(**log_params)
 
     def default(self, k):
         return self.control.get(k)
+
+    def func_done(self, name=None, cache=None, flag=True):
+        '''
+        记录函数是否运行
+        :param name:
+        :param cache:
+        :param flag:
+        :return:
+        '''
+        if not cache:
+            cache = self.debug_info['func_done']
+        return func_done(name=name, cache=cache, flag=flag)
+
+    def been_run(self):
+        '''
+        检查函数是否被运行过
+        :return:
+        '''
+        name = current_function(skip=[current_function()])
+        return self.debug_info['func_done'].get(name)
 
     def show_verbose(self, *obj):
         self.show_by_flag(self.verbose, *obj)
@@ -335,6 +357,43 @@ class MyClass:
         self.log.warn('function: {function}, warn: {message}'.format(**d))
 
 
+def myclass_precheck(have_run=None, check_func=None, retry=False):
+    '''
+    myclass的装饰器
+    :param have_run:    检查内部函数是否被执行
+    :param check_func:  用于执行检查的函数
+    :param retry:  如果前置函数已经失败，是否重新执行
+    :return:
+    '''
+
+    def deco(f):
+        @wraps(f)
+        def wrap(self, *args, **kwargs):
+            d = self.debug_info['func_done']
+            for func_name in str2list(have_run):
+                if func_name not in d or (d[func_name] is False and retry):
+                    if hasattr(self, func_name):
+                        is_ok, result = getattr(self, func_name)()
+                        if func_name not in d:
+                            d[func_name] = is_ok
+                        if is_ok:
+                            continue
+                        else:
+                            return False, 'deco: function {}. {}'.format(func_name, result)
+                    return False, 'deco: function {} is not exist.'.format(func_done())
+            for func_name in str2list(check_func):
+                if hasattr(self, func_name):
+                    is_ok, result = getattr(self, func_name)()
+                    if not is_ok:
+                        return False, 'deco: function {}. {}'.format(func_name, result)
+
+            return f(self, *args, **kwargs)
+
+        return wrap
+
+    return deco
+
+
 # def a(func):
 #     if func
 #
@@ -356,16 +415,15 @@ class MyClass:
 #     return is_ok, result
 
 
-def func_result(save=False, load=False, ident_key=None, mark=None, func_dump=None, func_load=None):
+def deco_result_sl(deco_save=False, deco_load=False, ident_key=None, mark=None, func_dump=None, func_load=None):
     '''
     保存成 <store_dir>/[mark_]<func_name>[_ident_key]，一些特殊的对象无法保存
-    :param save:
-    :param load:
+    :param deco_save:
+    :param deco_load:
     :param ident_key:
-    :param path:
     :param mark:
-    :param func_dump:
-    :param func_load:
+    :param func_dump:   dump前处理
+    :param func_load:   load后处理
     :return:
     '''
 
@@ -389,14 +447,14 @@ def func_result(save=False, load=False, ident_key=None, mark=None, func_dump=Non
                     in_class = True
                     if hasattr(self, 'path_temp'):
                         filename = Path(self.path_temp) / filename
-            if load and filename.is_file():
+            if deco_load and filename.is_file():
                 r, d = load_data(filename)
                 if r:
                     return func_load(d['result']) if func_load else d['result']
                 else:
                     return
             result = f(*args, **kwargs)
-            if save:
+            if deco_save:
                 r, d = dump_data({'result': func_dump(result) if func_dump else result,
                                   'func': f.__name__, 'args': str(args), 'kwargs': str(kwargs)}, filename)
             return result

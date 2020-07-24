@@ -21,6 +21,14 @@ def is_ip(ip):
         return False
 
 
+def collect_ip(s):
+    '''提取ip'''
+    ips = []
+    if isinstance(s, str):
+        ips = re.findall(Pattern_IP, s)
+    return ips
+
+
 def in_network(ip, network):
     nw = IPy.IP(network) if isinstance(network, str) else network
     return ip in nw

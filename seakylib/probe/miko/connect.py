@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 
 
 class BaseDevice(MyClass):
-    def __init__(self, ip, passwords, os=None, device_type=None, ssh_enable=True, telnet_enable=False,
+    def __init__(self, ip, passwords=None, os=None, device_type=None, ssh_enable=True, telnet_enable=False,
                  timeout=None, blocking_timeout=None, *args, **kwargs):
         '''
         :param args:
@@ -64,7 +64,7 @@ class BaseDevice(MyClass):
                 extra = {}
             net_connect = Netmiko(**auth, **extra, timeout=self.kwargs.get('timeout', 20),
                                   blocking_timeout=self.kwargs.get('cli_blocking_timeout', 20),
-                                  )
+                                  **self.kwargs)
         self.session = net_connect
         self.cache['cli_protocol'] = auth['device_type']
         if not self.device_type:
@@ -125,6 +125,9 @@ class BaseDevice(MyClass):
                     device_types.append('juniper_junos')
                 if self.telnet_enable:
                     device_types.append('juniper_junos_telnet')
+            elif self.os in ['linux']:
+                # linux没有像网络设备一样有默认的 #> 提示符，不适合用netmiko
+                device_types.append('linux')
         return device_types
 
     @catch_exception()

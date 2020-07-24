@@ -132,6 +132,51 @@ def change_type(v, to_type=None, default=None, strip=True):
         return v
 
 
+def compare_value(candidate, reference, precise=True):
+    '''
+    比较元素
+    :param candidate:  要验证的对象
+    :param reference: 标准，可以是regex
+    :param precise: 精确匹配，如果是False
+        对于dict/list，也要求candidate包含reference
+        也可以比较str和int/float
+    :return:
+    '''
+    if isinstance(candidate, dict):
+        if isinstance(reference, dict):
+            if precise and len(candidate) != len(reference):
+                return False
+            for k, v in reference.items():
+                if k not in candidate or candidate[k] != v:
+                    return False
+            return True
+        else:
+            return False
+    elif isinstance(candidate, list):
+        if isinstance(reference, list):
+            if precise:
+                if len(candidate) != len(reference):
+                    return False
+            else:
+                if len(candidate) < len(reference):
+                    return False
+            for i, x in enumerate(reference):
+                if x != candidate[i]:
+                    return False
+            return True
+        else:
+            return False
+    else:
+        if precise:
+            return candidate == reference
+        elif str_is_number(candidate) and str_is_number(reference):
+            return float(candidate) == float(reference)
+        elif isinstance(candidate, str):
+            if isinstance(reference, re._pattern_type):
+                return bool(reference.search(candidate))
+    return False
+
+
 def replace(s, pats=None, default='', ret_with_pat=False, _any=False, flags=0, escape=False):
     '''
     :param s:
@@ -251,12 +296,14 @@ def format_output(data, column=None, show_title=True, fmt=None, default='-', sep
     return '\n'.join(s)
 
 
-def add_quote(v, to_str=True, split=False, strip=True, quote='"'):
+def add_quote(v, to_str=True, split=False, delimiter=',', strip=True, quote='"'):
     '''
     添加 " " 到sql语句中
     :param v: int/float/list/str
     :param to_str: 数字也转成字符串，在select中可以，但在call procedure不能
     :param split: 如果split, 则分割v, 返回合并, xxx,yyy -> "xxx","yyy"
+    :param delimiter: 分割符
+    :param quote: 引号
     :param strip: 去除空值
     :return:
     '''
@@ -267,7 +314,17 @@ def add_quote(v, to_str=True, split=False, strip=True, quote='"'):
     elif isinstance(v, (int, float)):
         return '{0}{1}{0}'.format(quote, v) if to_str else str(v)
     elif split:
-        return ','.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
-                                  to_str=to_str, split=False, strip=strip, quote=quote))
+        return delimiter.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
+                                        to_str=to_str, split=False, strip=strip, quote=quote))
     else:
         return '{0}{1}{0}'.format(quote, replace(v, pats=['(^"|"$)', "(^'|'$)"]))
+
+
+def confirm(prompt='确认？'):
+    '''
+    确认
+    :param prompt:
+    :return:
+    '''
+    c = input('{} (y|N)  '.format(prompt)).strip()
+    return c.lower() == 'y'
