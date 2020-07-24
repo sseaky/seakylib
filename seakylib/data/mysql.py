@@ -22,6 +22,8 @@ from sqlalchemy.orm import sessionmaker
 from ..data.pd import set_none
 from ..func.string import change_type, add_quote
 from ..func.time import datetime_to_string
+
+
 # from ..func.log import make_logger
 
 
@@ -496,8 +498,8 @@ class MyModel:
                     break
                 sub = items_need_update[i:i + block]
                 is_ok, result = self._update_case(changed_cols, sub, key, force_condition,
-                                               time_update=time_update, now=now,
-                                               dryrun=dryrun)
+                                                  time_update=time_update, now=now,
+                                                  dryrun=dryrun)
                 assert is_ok, result
                 sqls.extend(result['sqls'])
                 i += block
