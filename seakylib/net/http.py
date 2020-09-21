@@ -67,15 +67,15 @@ class Http(MyClass):
     def __getattr__(self, item):
         return self.__dict__.get(item, self.kwargs.get(item))
 
-    def fetch(self, url, ret_bs=True, ret_raw=False, method='GET', tries=None, timeout=None, retry_code=None,
-              retry_not_200=False,
-              ret_dic=False, ret_json=False, charset=None, **kwargs):
+    def fetch(self, url, ret_bs=True, method='GET', timeout=None,
+              retry=3, retry_code=None, retry_not_200=False,
+              ret_raw=False, ret_dic=False, ret_json=False, charset=None, **kwargs):
         '''
         :param url:
         :param ret_bs: 返回bs4 obj
         :param ret_raw: 返回原始数据
         :param method: GET、POST
-        :param tries: 重试次数
+        :param retry: 重试次数
         :param retry_code: 重试某些code
         :param retry_not_200: 重试非200
         :param ret_dic: 返回url, args, result的字典
@@ -86,14 +86,14 @@ class Http(MyClass):
         '''
         d = {'verify': self.default('ssl_verify'), 'timeout': timeout or self.default('http_timeout'),
              'proxies': self.default('http_proxy')}
-        tries = tries or self.default('http_retry')
+        retries = retry or self.default('http_retry')
         d.update(kwargs)
         if not re.search(r'^http', url, re.I) and self.url_root:
             url = re.sub('/*$', '', self.url_root) + '/' + re.sub('^/*', '', url)
         flag = False
         retry_code = retry_code or []
         code_reason = ''
-        for i in range(tries):
+        for i in range(retry):
             try:
                 _raw = self.session.post(url, **d) if method == 'POST' else self.session.get(url, **d)
                 code = _raw.status_code
@@ -149,7 +149,7 @@ class Http(MyClass):
         mr = MultiRun(func=self.multi_job, func_kws=kws, log=self.log, add_log_to_common_kw=False,
                       process_num=process_num,
                       verbose=self.verbose, debug=self.debug)
-        is_ok, results = mr.run(save=False, process_timeout=process_time, inline=inline)
+        is_ok, results = mr.run(mrun_save=False, process_timeout=process_time, inline=inline)
         return is_ok, results
 
     def fetch_after(self, *args):

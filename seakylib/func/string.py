@@ -4,9 +4,27 @@
 # @Date:   2019/8/20 14:57
 
 import re
+from decimal import Decimal
+
+
+def qround(n, digit=2, retf=False):
+    '''
+    比round更高的精度
+    :param n:
+    :param digit:
+    :param retf:
+    :return:
+    '''
+    r = Decimal(n).quantize(Decimal('0.{}'.format('0' * digit)))
+    if retf:
+        r = float(r)
+    return r
 
 
 def comma_digit(s, tp=int):
+    '''用逗号分割数字'''
+    if isinstance(s, int):
+        return '{,}'.format_map(s)
     if str_is_number(s, tp, exp=True):
         return '{:,}'.format(int(s))
     return s
@@ -39,11 +57,74 @@ def str_is_email_address(s):
         return re.search('^(?P<id>.+)@(?P<domain>[\w\d]+\.([\w\d]+\.){0,}\w+$)', s)
 
 
-def str2list(s, sep=',', presave_blank=False, wrapper='', filter=None):
+def exact_number(s, base=1000):
+    '''
+    iptables中可以使用-x参数
+    :param s:
+    :param base:
+    :return:
+    '''
+    l = ['k', 'm', 'g', 't']
+    if s.isdigit():
+        return s
+    else:
+        for i, c in enumerate(l):
+            if s[-1].lower() == c:
+                return str(int(s[:-1]) * base ** (i + 1))
+
+
+def obj2list(obj, ret_str=False, sep=',', preserve_blank=False, preserve_none=False, wrapper='', ignore=None, sep2=','):
+    '''
+    合并 str2list, list2str, add_quote
+    'a,b,c' -> ['a', 'b', 'c'] -> ['"a"', '"b"', '"c"'] -> "a","b","c"
+    :param obj:
+    :param ret_str:  返回str
+    :param sep:  原字段分割符
+    :param preserve_blank:  保留空白项
+    :param preserve_none:  保留None
+    :param wrapper: item加上"
+    :param ignore:  过滤回调函数
+    :param sep2:    返回str时，连接符
+    :return:
+    '''
+    if obj is None and preserve_none:
+        return None
+    lst = str2list(obj, sep=sep, preserve_blank=preserve_blank, wrapper=wrapper, filter=ignore)
+    if ret_str:
+        return sep2.join(lst)
+    else:
+        return lst
+
+
+def add_quote(v, to_str=True, split=False, delimiter=',', strip=True, quote='"'):
+    '''
+    添加 " " 到sql语句中
+    :param v: int/float/list/str
+    :param to_str: 数字也转成字符串，在select中可以，但在call procedure不能
+    :param split: 如果split, 则分割v, 返回合并, xxx,yyy -> "xxx","yyy"
+    :param delimiter: 分割符
+    :param quote: 引号
+    :param strip: 去除空值
+    :return:
+    '''
+    if v is None:
+        return 'Null'
+    elif isinstance(v, (list, tuple)):
+        return [add_quote(x, to_str=to_str, split=False, strip=strip, quote=quote) for x in v]
+    elif isinstance(v, (int, float)):
+        return '{0}{1}{0}'.format(quote, v) if to_str else str(v)
+    elif split:
+        return delimiter.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
+                                        to_str=to_str, split=False, strip=strip, quote=quote))
+    else:
+        return '{0}{1}{0}'.format(quote, replace(v, pats=['(^"|"$)', "(^'|'$)"]))
+
+
+def str2list(s, sep=',', preserve_blank=False, wrapper='', filter=None):
     '''
     分割字符串，添加引号
     :param s:
-    :param presave_blank:   是否保留空的item
+    :param preserve_blank:   是否保留空的item
     :param wrapper: '/"
     :param filter:  过滤回调函数，True过滤
     :return:
@@ -54,7 +135,7 @@ def str2list(s, sep=',', presave_blank=False, wrapper='', filter=None):
         l = []
         for x in s.split(sep):
             y = x.strip()
-            if not presave_blank and not y:
+            if not preserve_blank and not y:
                 continue
             if filter and hasattr(filter, '__call__') and not filter(y):
                 continue
@@ -63,10 +144,19 @@ def str2list(s, sep=',', presave_blank=False, wrapper='', filter=None):
     elif isinstance(s, list):
         return ['{0}{1}{0}'.format(wrapper, str(y)) for y in s]
     else:
-        return s
+        return [s]
 
 
 def list2str(l, sep=',', wrapper='', *args, **kwargs):
+    '''
+    list转成str，并加上wrapper
+    :param l:
+    :param sep:
+    :param wrapper:
+    :param args:
+    :param kwargs:
+    :return:
+    '''
     if isinstance(l, (list, set)):
         return sep.join(['{0}{1}{0}'.format(wrapper, x) for x in l])
     elif isinstance(l, str):
@@ -77,11 +167,7 @@ def list2str(l, sep=',', wrapper='', *args, **kwargs):
 
 
 def arg2list(obj):
-    if obj is None:
-        return []
-    elif not isinstance(obj, list):
-        return [obj]
-    return obj
+    return str2list(obj)
 
 
 def bytes_decode(v, is_hex=False, enconding='utf-8', errors='strict', **kwargs):
@@ -294,30 +380,6 @@ def format_output(data, column=None, show_title=True, fmt=None, default='-', sep
         else:
             s.append(str(x))
     return '\n'.join(s)
-
-
-def add_quote(v, to_str=True, split=False, delimiter=',', strip=True, quote='"'):
-    '''
-    添加 " " 到sql语句中
-    :param v: int/float/list/str
-    :param to_str: 数字也转成字符串，在select中可以，但在call procedure不能
-    :param split: 如果split, 则分割v, 返回合并, xxx,yyy -> "xxx","yyy"
-    :param delimiter: 分割符
-    :param quote: 引号
-    :param strip: 去除空值
-    :return:
-    '''
-    if v is None:
-        return 'Null'
-    elif isinstance(v, (list, tuple)):
-        return [add_quote(x, to_str=to_str, split=False, strip=strip, quote=quote) for x in v]
-    elif isinstance(v, (int, float)):
-        return '{0}{1}{0}'.format(quote, v) if to_str else str(v)
-    elif split:
-        return delimiter.join(add_quote([x for x in v.split(',') if (not strip or x.strip())],
-                                        to_str=to_str, split=False, strip=strip, quote=quote))
-    else:
-        return '{0}{1}{0}'.format(quote, replace(v, pats=['(^"|"$)', "(^'|'$)"]))
 
 
 def confirm(prompt='确认？'):

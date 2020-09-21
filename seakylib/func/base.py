@@ -4,6 +4,7 @@
 # @Date:   2019/8/14 12:05
 
 
+import json
 import logging
 import re
 import time
@@ -345,7 +346,7 @@ class MyClass:
         skip.append('log_error')
         d = {'function': current_function(skip=skip), 'message': s}
         self.debug_info['error'].append(d)
-        self.log.error('function: {function}, error: {message}'.format(**d))
+        self.log.error('function: {function}. error: {message}'.format(**d))
 
     def log_warn(self, s, skip=None):
         '''在这里记录手工警告'''
@@ -354,7 +355,34 @@ class MyClass:
         skip.append('log_warn')
         d = {'function': current_function(skip=skip), 'message': s}
         self.debug_info['warn'].append(d)
-        self.log.warn('function: {function}, warn: {message}'.format(**d))
+        self.log.warn('function: {function}. warn: {message}'.format(**d))
+
+    def load_data(self, fn):
+        '''
+        载入临时数据
+        :param fn:
+        :return:
+        '''
+        if isinstance(fn, str):
+            fn = Path('temp') / fn
+        if fn.exists():
+            self.log.debug('load data from {}'.format(fn))
+            data = json.load(open(str(fn)))
+            return data
+
+    def dump_data(self, data, fn):
+        '''
+        保存临时数据到 temp 目录
+        :param fn:
+        :param data:
+        :return:
+        '''
+        if isinstance(fn, str):
+            fn = Path('temp') / fn
+        self.log.debug('dump data to {}'.format(fn))
+        if not Path('temp').is_dir():
+            Path('temp').mkdir()
+        return json.dump(data, open(str(fn), 'w'))
 
 
 def myclass_precheck(have_run=None, check_func=None, retry=False):

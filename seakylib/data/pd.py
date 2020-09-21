@@ -194,3 +194,19 @@ def change_df_type():
     2、df['x'].astype(str)
     3、df = df.infer_objects()'''
     pass
+
+
+def to_excel(data, fn, mode='w', engine=None):
+    '''
+    :param data:  (df, {'sheet_name': sheet_name, 'index': False})
+    :param fn:
+    :param mode:  'a'模式，需要安装openpyxl
+    :return:
+    '''
+    if mode == 'a':
+        engine = 'openpyxl'
+    writer = pd.ExcelWriter(fn, engine=engine, mode=mode)
+    for df, kw in data:
+        kw['index'] = kw.get('index')
+        df.to_excel(writer, **kw)
+    writer.save()

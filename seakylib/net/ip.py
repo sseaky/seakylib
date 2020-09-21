@@ -21,12 +21,14 @@ def is_ip(ip):
         return False
 
 
-def collect_ip(s):
+def collect_ip(s, uniq=True, sort=True):
     '''提取ip'''
     ips = []
     if isinstance(s, str):
-        ips = re.findall(Pattern_IP, s)
-    return ips
+        ips = [x.group('ip') for x in re.finditer(Pattern_IP, s)]
+        if uniq:
+            ips = list(set(ips))
+    return sort_ips(ips) if sort else ips
 
 
 def in_network(ip, network):

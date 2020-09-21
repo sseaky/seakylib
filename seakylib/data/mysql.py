@@ -1008,3 +1008,12 @@ class MyModel:
         # for x in self.model.metadata.tables.values():
         return self.model.metadata.create_all(self.engine, tables=[self.model.__table__])
         # return None, to_sql可以直接创建
+
+    def execute(self, sql):
+        '''
+        直接执行语句，insert之类的语句是不能对r.fetchall()的
+        :param sql:
+        :return:
+        '''
+        r = self.engine.execute(sql)
+        return r

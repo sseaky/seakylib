@@ -24,7 +24,7 @@ class Mail(MyClass):
     127.0.0.1   xxxxx.cn xxxxx
     很多服务器也会拒绝虚拟的FQDN
     运行 hostname -f
-    sudo dpkg-reconfigure exim4-config
+    sudo dpkg-reconfigure exim4-cfg
     '''
 
     def __init__(self, server='localhost', port=25, username=None, password=None, conn_mode='plain', **kwargs):
