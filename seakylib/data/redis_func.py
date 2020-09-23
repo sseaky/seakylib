@@ -345,6 +345,23 @@ class RedisC(Redis):
         self.log.debug('finish {}'.format(msg))
         return d
 
+    def pipe_ex(self, ex, keys=None, prefix='', limit=None, n=PIPELINE_N, count=SCAN_COUNT, transaction=True,
+                shard_hint=None, raise_on_error=True):
+        rs = []
+        if not keys and prefix:
+            keys = self.count_keys(prefix=prefix, count=count, ret_keys=True, limit=limit, key_with_prefix=True)['keys']
+        msg = 'set expire time {} to {}{} keys'.format(ex, 'prefix {} '.format(prefix) if prefix else '', len(keys))
+        self.log.debug('start {}'.format(msg))
+        with self.pipeline(transaction=transaction, shard_hint=shard_hint) as pipe:
+            for i, k in enumerate(keys):
+                pipe.expire(k, ex)
+                if i and (i % n == 0 or i + 1 == len(keys)):
+                    r = pipe.execute(raise_on_error=raise_on_error)
+                    rs.extend(r)
+        d = {'input': len(keys), 'expire': len(rs), 'success': len([x for x in rs if x])}
+        self.log.debug('finish {}'.format(msg))
+        return d
+
     def sync_to(self, rds_to, prefix, limit=None):
         return self._sync_redis(rds_from=self, rds_to=rds_to, prefix=prefix, limit=limit)
 
