@@ -1,6 +1,6 @@
 ## About
 
-This is Seaky's private lib.
+This is Seaky's lib.
 
 
 

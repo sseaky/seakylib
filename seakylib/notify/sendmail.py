@@ -15,7 +15,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 from ..func.base import MyClass, run_func, func_done
-from ..func.string import str_is_number, comma_digit
+from ..func.string import str_is_number, comma_digit, str2list
 
 
 class Mail(MyClass):
@@ -70,11 +70,11 @@ class Mail(MyClass):
     def send(self, from_addr=None, to_addrs=None, **kwargs):
         '''公共server会验证from_addr'''
         from_addr = str(Header(from_addr or self.from_addr, 'utf-8'))
-        to_addrs = to_addrs or self.to_addrs
+        to_addrs = str2list(to_addrs or self.to_addrs)
         if self.cc_addrs:
-            to_addrs = to_addrs + self.cc_addrs
+            to_addrs = to_addrs + str2list(self.cc_addrs)
         if self.bcc_addrs:
-            to_addrs = to_addrs + self.bcc_addrs
+            to_addrs = to_addrs + str2list(self.bcc_addrs)
         if not self.cache.get('error'):
             try:
                 r = self.smtp.sendmail(from_addr=from_addr, to_addrs=to_addrs, msg=self.msg.as_string(), **kwargs)
@@ -86,12 +86,9 @@ class Mail(MyClass):
 
     def create_message(self, from_addr, to_addrs, subject, cc_addrs=None, bcc_addrs=None, charset='utf-8'):
         '''to_addrs, from_addr for display in body'''
-        if isinstance(to_addrs, str):
-            to_addrs = [to_addrs]
-        if isinstance(cc_addrs, str):
-            cc_addrs = [cc_addrs]
-        if isinstance(bcc_addrs, str):
-            bcc_addrs = [bcc_addrs]
+        to_addrs = str2list(to_addrs)
+        cc_addrs = str2list(cc_addrs)
+        bcc_addrs = str2list(bcc_addrs)
         self.from_addr = from_addr
         self.to_addrs = to_addrs
         self.cc_addrs = cc_addrs

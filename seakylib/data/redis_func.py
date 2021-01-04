@@ -133,7 +133,7 @@ class RedisC(Redis):
 
     def pipe_set(self, data, n=PIPELINE_N, columns=None, transaction=True, shard_hint=None, ex=None, ret=True,
                  raise_on_error=True, group=False, drop_dup=True, group_split=',',
-                 json_value=False, prefix='', ret_raw=False, result_prefix='', silenct=False, **kwargs):
+                 json_value=False, prefix='', ret_raw=False, result_prefix='', silence=False, **kwargs):
         '''
         :param data:    list/dict, 数据
                 [(k1, v1), (k2, v2), ...]
@@ -155,7 +155,7 @@ class RedisC(Redis):
         :param prefix:  放入redis时，k加上前缀
         :param ret_raw:  是否返回原始返回值
         :param result_prefix:  返回结果字典时是否添加前缀，用于合并多个结果
-        :param silenct:
+        :param silence:
         :param kwargs:
         :return:
         '''
@@ -167,7 +167,7 @@ class RedisC(Redis):
                 return v
 
         msg = 'set {} "{}" items'.format(len(data), prefix)
-        if not silenct:
+        if not silence:
             self.log.debug('start {}'.format(msg))
 
         if group:
@@ -209,7 +209,7 @@ class RedisC(Redis):
         d = {'input': len(data), 'set': len(rs), 'success': len([x for x in rs if x])}
         if ret_raw:
             d['raw'] = rs
-        if not silenct:
+        if not silence:
             self.log.debug('finish {}'.format(msg))
         return {result_prefix + '_' + k: v for k, v in d.items()} if result_prefix else d
 

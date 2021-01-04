@@ -234,6 +234,24 @@ class OSSQL(MyClass):
     def __init__(self, db_user=None, db_pass=None, db_name=None, db_host='localhost', db_port=3306,
                  ssh_host=None, ssh_port=22, ssh_user=None, ssh_keyfile=None, env=None,
                  escape='`"', ssh_options=None, ssh_quite=False, *args, **kwargs):
+        '''
+
+        :param db_user:
+        :param db_pass:
+        :param db_name:
+        :param db_host:
+        :param db_port:
+        :param ssh_host:
+        :param ssh_port:
+        :param ssh_user:
+        :param ssh_keyfile:
+        :param env:
+        :param escape:
+        :param ssh_options:
+        :param ssh_quite:
+        :param args:
+        :param kwargs:
+        '''
         MyClass.__init__(self, *args, **kwargs)
         self.db_auth = {'db_user': db_user, 'db_pass': db_pass, 'db_name': db_name, 'db_host': db_host,
                         'db_port': db_port}

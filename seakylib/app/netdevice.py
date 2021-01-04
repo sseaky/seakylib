@@ -54,7 +54,9 @@ class NetDeviceClass(MyClass):
                  'ruijie': self.do_ruijie,
                  'junos': self.do_junos,
                  }
-        return funcs[self.cli.os]()
+        assert self.cli.os in funcs or hasattr(self, 'do_{}'.format(self.cli.os)), 'the os {} is not compatible'
+        return getattr(self, 'do_{}'.format(self.cli.os))()
+        # return funcs[self.cli.os]()
 
     def do_comware(self):
         return False, 'no code.'
