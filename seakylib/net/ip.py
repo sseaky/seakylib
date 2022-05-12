@@ -8,7 +8,30 @@ import re
 
 import IPy
 
-Pattern_IP = '(?P<ip>((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))'
+Pattern_IP = '(?P<ip>((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))'    # 老版本
+
+Pattern_IPv4Seg = '(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])'
+Pattern_IPv4Address = '(?P<ip4>{})'.format('({0}\.){{3,3}}{0}'.format(Pattern_IPv4Seg))
+Pattern_IPv6Seg = '[0-9a-fA-F]{1,4}'
+Pattern_IPv6Address = '(?P<ip6>{})'.format('|'.join([
+    '({0}:){{7,7}}{0}'.format(Pattern_IPv6Seg),  # 1:2:3:4:5:6:7:8
+    '({0}:){{1,7}}:'.format(Pattern_IPv6Seg),  # 1::                                 1:2:3:4:5:6:7::
+    '({0}:){{1,6}}:{0}'.format(Pattern_IPv6Seg),  # 1::8               1:2:3:4:5:6::8   1:2:3:4:5:6::8
+    '({0}:){{1,5}}(:{0}){{1,2}}'.format(Pattern_IPv6Seg),  # 1::7:8             1:2:3:4:5::7:8   1:2:3:4:5::8
+    '({0}:){{1,4}}(:{0}){{1,3}}'.format(Pattern_IPv6Seg),  # 1::6:7:8           1:2:3:4::6:7:8   1:2:3:4::8
+    '({0}:){{1,3}}(:{0}){{1,4}}'.format(Pattern_IPv6Seg),  # 1::5:6:7:8         1:2:3::5:6:7:8   1:2:3::8
+    '({0}:){{1,2}}(:{0}){{1,5}}'.format(Pattern_IPv6Seg),  # 1::4:5:6:7:8       1:2::4:5:6:7:8   1:2::8
+    '{0}:((:{0}){{1,6}})'.format(Pattern_IPv6Seg),  # 1::3:4:5:6:7:8     1::3:4:5:6:7:8   1::8
+    ':((:{0}){{1,7}}|:)'.format(Pattern_IPv6Seg),  # ::2:3:4:5:6:7:8    ::2:3:4:5:6:7:8  ::8       ::
+    # fe80::7:8%eth0     fe80::7:8%1  (link-local IPv6 addresses with zone index)
+    'fe80:(:{0}){{0,4}}%[0-9a-zA-Z]{{1,}}'.format(Pattern_IPv6Seg),
+    # ::255.255.255.255  ::ffff:255.255.255.255  ::ffff:0:255.255.255.255 (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
+    '::(ffff(:0{{1,4}}){{0,1}}:){{0,1}}{0}'.format(Pattern_IPv6Seg),
+    # 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
+    '({0}:){{1,4}}:{0}'.format(Pattern_IPv6Seg),
+]))
+Pattern_IPv4Network = '(?P<network4>{}(/\d+)*)'.format(Pattern_IPv4Address)
+Pattern_IPv6Network = '(?P<network6>{}(/\d+)*)'.format(Pattern_IPv6Address)
 
 
 def is_ip(ip):

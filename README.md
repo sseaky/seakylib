@@ -6,6 +6,12 @@ This is Seaky's lib.
 
 ## Update
 
+### 1.0.6.5
+
+detach app/probe module for general use
+
+
+
 ### 1.0.6.3a
 
 data.redis_fun.pipe_ex
